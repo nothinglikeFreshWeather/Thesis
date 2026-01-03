@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # Kafka with Kraft (without Zookeeper)
+  kafka:
+    image: apache/kafka:4.1.1
+    container_name: kafka-kraft
+    environment:
+      # Kraft mode configuration (no Zookeeper)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    ports:
+      - "9092:9092"
+    networks:
+      - stock-network
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: stockdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - stock-network
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Toxiproxy for network partition simulation
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:latest
+    container_name: toxiproxy
+    ports:
+      - "8666:8474" # Toxiproxy API
+      - "29093:29093" # Kafka proxy
+      - "3307:3307" # MySQL proxy
+    networks:
+      - stock-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./toxiproxy-config.json:/config/toxiproxy.json
+    command: -host=0.0.0.0 -config=/config/toxiproxy.json
+
+  # Spring Boot Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock-tracking-app
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://toxiproxy:3307/stockdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: toxiproxy:29093
+    ports:
+      - "8080:8080"
+    networks:
+      - stock-network
+    depends_on:
+      toxiproxy:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+
+networks:
+  stock-network:
+    driver: bridge
+
+volumes:
+  mysql-data:

@@ -1,0 +1,14 @@
+[
+    {
+        "name": "kafka",
+        "listen": "0.0.0.0:29093",
+        "upstream": "kafka:9092",
+        "enabled": true
+    },
+    {
+        "name": "mysql",
+        "listen": "0.0.0.0:3307",
+        "upstream": "mysql:3306",
+        "enabled": true
+    }
+]
