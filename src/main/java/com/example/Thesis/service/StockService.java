@@ -5,12 +5,15 @@ import com.example.Thesis.dto.StockRequestDto;
 import com.example.Thesis.dto.StockResponseDto;
 import com.example.Thesis.model.Stock;
 import com.example.Thesis.repository.StockRepository;
+import com.example.Thesis.service.cache.CacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -18,117 +21,160 @@ import java.util.stream.Collectors;
 @Slf4j
 public class StockService {
 
-    private final StockRepository stockRepository;
-    private final KafkaProducerService kafkaProducerService;
+        private final StockRepository stockRepository;
+        private final KafkaProducerService kafkaProducerService;
+        private final CacheService cacheService;
 
-    @Transactional
-    public StockResponseDto createStock(StockRequestDto requestDto) {
-        log.info("Creating new stock: productName={}", requestDto.getProductName());
+        private static final String CACHE_KEY_PREFIX = "stock:";
+        private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
-        // Check if product already exists
-        if (stockRepository.existsByProductName(requestDto.getProductName())) {
-            throw new IllegalArgumentException(
-                    "Product with name '" + requestDto.getProductName() + "' already exists");
+        @Transactional
+        public StockResponseDto createStock(StockRequestDto requestDto) {
+                log.info("Creating new stock: productName={}", requestDto.getProductName());
+
+                // Check if product already exists
+                if (stockRepository.existsByProductName(requestDto.getProductName())) {
+                        throw new IllegalArgumentException(
+                                        "Product with name '" + requestDto.getProductName() + "' already exists");
+                }
+
+                // Create and save stock
+                Stock stock = new Stock();
+                stock.setProductName(requestDto.getProductName());
+                stock.setQuantity(requestDto.getQuantity());
+                stock.setPrice(requestDto.getPrice());
+
+                Stock savedStock = stockRepository.save(stock);
+                log.info("Stock created successfully: id={}, productName={}", savedStock.getId(),
+                                savedStock.getProductName());
+
+                StockResponseDto response = mapToResponseDto(savedStock);
+
+                // Cache the new stock (write-through)
+                String cacheKey = CACHE_KEY_PREFIX + savedStock.getId();
+                cacheService.set(cacheKey, response, CACHE_TTL);
+                log.debug("Cached new stock: key={}", cacheKey);
+
+                // Send Kafka event
+                StockEventDto event = StockEventDto.create(
+                                StockEventDto.EventType.CREATED,
+                                savedStock.getId(),
+                                savedStock.getProductName(),
+                                savedStock.getQuantity(),
+                                savedStock.getPrice());
+                kafkaProducerService.sendStockEvent(event);
+
+                return response;
         }
 
-        // Create and save stock
-        Stock stock = new Stock();
-        stock.setProductName(requestDto.getProductName());
-        stock.setQuantity(requestDto.getQuantity());
-        stock.setPrice(requestDto.getPrice());
+        @Transactional(readOnly = true)
+        public StockResponseDto getStockById(Long id) {
+                log.info("Fetching stock by id: {}", id);
 
-        Stock savedStock = stockRepository.save(stock);
-        log.info("Stock created successfully: id={}, productName={}", savedStock.getId(), savedStock.getProductName());
+                // Try cache first (read-through from Redis replica)
+                String cacheKey = CACHE_KEY_PREFIX + id;
+                Optional<StockResponseDto> cached = cacheService.get(cacheKey, StockResponseDto.class);
 
-        // Send Kafka event
-        StockEventDto event = StockEventDto.create(
-                StockEventDto.EventType.CREATED,
-                savedStock.getId(),
-                savedStock.getProductName(),
-                savedStock.getQuantity(),
-                savedStock.getPrice());
-        kafkaProducerService.sendStockEvent(event);
+                if (cached.isPresent()) {
+                        log.info("Cache HIT for stock: {}", id);
+                        return cached.get();
+                }
 
-        return mapToResponseDto(savedStock);
-    }
+                // Cache miss - read from database
+                log.info("Cache MISS for stock: {}", id);
+                Stock stock = stockRepository.findById(id)
+                                .orElseThrow(() -> new IllegalArgumentException("Stock not found with id: " + id));
 
-    @Transactional(readOnly = true)
-    public StockResponseDto getStockById(Long id) {
-        log.info("Fetching stock by id: {}", id);
-        Stock stock = stockRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found with id: " + id));
-        return mapToResponseDto(stock);
-    }
+                StockResponseDto response = mapToResponseDto(stock);
 
-    @Transactional(readOnly = true)
-    public List<StockResponseDto> getAllStocks() {
-        log.info("Fetching all stocks");
-        return stockRepository.findAll().stream()
-                .map(this::mapToResponseDto)
-                .collect(Collectors.toList());
-    }
+                // Cache the result (write to Redis master)
+                cacheService.set(cacheKey, response, CACHE_TTL);
+                log.debug("Cached stock from DB: key={}", cacheKey);
 
-    @Transactional
-    public StockResponseDto updateStock(Long id, StockRequestDto requestDto) {
-        log.info("Updating stock: id={}, productName={}", id, requestDto.getProductName());
-
-        Stock stock = stockRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found with id: " + id));
-
-        // Check if new product name conflicts with another stock
-        if (!stock.getProductName().equals(requestDto.getProductName()) &&
-                stockRepository.existsByProductName(requestDto.getProductName())) {
-            throw new IllegalArgumentException(
-                    "Product with name '" + requestDto.getProductName() + "' already exists");
+                return response;
         }
 
-        stock.setProductName(requestDto.getProductName());
-        stock.setQuantity(requestDto.getQuantity());
-        stock.setPrice(requestDto.getPrice());
+        @Transactional(readOnly = true)
+        public List<StockResponseDto> getAllStocks() {
+                log.info("Fetching all stocks");
+                return stockRepository.findAll().stream()
+                                .map(this::mapToResponseDto)
+                                .collect(Collectors.toList());
+        }
 
-        Stock updatedStock = stockRepository.save(stock);
-        log.info("Stock updated successfully: id={}, productName={}", updatedStock.getId(),
-                updatedStock.getProductName());
+        @Transactional
+        public StockResponseDto updateStock(Long id, StockRequestDto requestDto) {
+                log.info("Updating stock: id={}, productName={}", id, requestDto.getProductName());
 
-        // Send Kafka event
-        StockEventDto event = StockEventDto.create(
-                StockEventDto.EventType.UPDATED,
-                updatedStock.getId(),
-                updatedStock.getProductName(),
-                updatedStock.getQuantity(),
-                updatedStock.getPrice());
-        kafkaProducerService.sendStockEvent(event);
+                Stock stock = stockRepository.findById(id)
+                                .orElseThrow(() -> new IllegalArgumentException("Stock not found with id: " + id));
 
-        return mapToResponseDto(updatedStock);
-    }
+                // Check if new product name conflicts with another stock
+                if (!stock.getProductName().equals(requestDto.getProductName()) &&
+                                stockRepository.existsByProductName(requestDto.getProductName())) {
+                        throw new IllegalArgumentException(
+                                        "Product with name '" + requestDto.getProductName() + "' already exists");
+                }
 
-    @Transactional
-    public void deleteStock(Long id) {
-        log.info("Deleting stock: id={}", id);
+                stock.setProductName(requestDto.getProductName());
+                stock.setQuantity(requestDto.getQuantity());
+                stock.setPrice(requestDto.getPrice());
 
-        Stock stock = stockRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found with id: " + id));
+                Stock updatedStock = stockRepository.save(stock);
+                log.info("Stock updated successfully: id={}, productName={}", updatedStock.getId(),
+                                updatedStock.getProductName());
 
-        stockRepository.delete(stock);
-        log.info("Stock deleted successfully: id={}, productName={}", stock.getId(), stock.getProductName());
+                StockResponseDto response = mapToResponseDto(updatedStock);
 
-        // Send Kafka event
-        StockEventDto event = StockEventDto.create(
-                StockEventDto.EventType.DELETED,
-                stock.getId(),
-                stock.getProductName(),
-                stock.getQuantity(),
-                stock.getPrice());
-        kafkaProducerService.sendStockEvent(event);
-    }
+                // Update cache (write-through)
+                String cacheKey = CACHE_KEY_PREFIX + updatedStock.getId();
+                cacheService.set(cacheKey, response, CACHE_TTL);
+                log.debug("Updated cache for stock: key={}", cacheKey);
 
-    private StockResponseDto mapToResponseDto(Stock stock) {
-        return new StockResponseDto(
-                stock.getId(),
-                stock.getProductName(),
-                stock.getQuantity(),
-                stock.getPrice(),
-                stock.getCreatedAt(),
-                stock.getUpdatedAt());
-    }
+                // Send Kafka event
+                StockEventDto event = StockEventDto.create(
+                                StockEventDto.EventType.UPDATED,
+                                updatedStock.getId(),
+                                updatedStock.getProductName(),
+                                updatedStock.getQuantity(),
+                                updatedStock.getPrice());
+                kafkaProducerService.sendStockEvent(event);
+
+                return response;
+        }
+
+        @Transactional
+        public void deleteStock(Long id) {
+                log.info("Deleting stock: id={}", id);
+
+                Stock stock = stockRepository.findById(id)
+                                .orElseThrow(() -> new IllegalArgumentException("Stock not found with id: " + id));
+
+                stockRepository.delete(stock);
+                log.info("Stock deleted successfully: id={}, productName={}", stock.getId(), stock.getProductName());
+
+                // Invalidate cache
+                String cacheKey = CACHE_KEY_PREFIX + stock.getId();
+                cacheService.delete(cacheKey);
+                log.debug("Invalidated cache for deleted stock: key={}", cacheKey);
+
+                // Send Kafka event
+                StockEventDto event = StockEventDto.create(
+                                StockEventDto.EventType.DELETED,
+                                stock.getId(),
+                                stock.getProductName(),
+                                stock.getQuantity(),
+                                stock.getPrice());
+                kafkaProducerService.sendStockEvent(event);
+        }
+
+        private StockResponseDto mapToResponseDto(Stock stock) {
+                return new StockResponseDto(
+                                stock.getId(),
+                                stock.getProductName(),
+                                stock.getQuantity(),
+                                stock.getPrice(),
+                                stock.getCreatedAt(),
+                                stock.getUpdatedAt());
+        }
 }
