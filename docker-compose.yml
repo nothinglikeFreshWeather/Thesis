@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Kafka with Kraft (without Zookeeper)
   kafka:
@@ -49,6 +47,39 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis Master
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis-master
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    networks:
+      - stock-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Replica (Read-only)
+  redis-replica:
+    image: redis:7-alpine
+    container_name: redis-replica
+    command: redis-server --replicaof redis-master 6379 --replica-read-only yes
+    ports:
+      - "6380:6379"
+    networks:
+      - stock-network
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # Toxiproxy for network partition simulation
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:latest
@@ -57,12 +88,18 @@ services:
       - "8666:8474" # Toxiproxy API
       - "29093:29093" # Kafka proxy
       - "3307:3307" # MySQL proxy
+      - "26379:26379" # Redis master proxy
+      - "26380:26380" # Redis replica proxy
     networks:
       - stock-network
     depends_on:
       kafka:
         condition: service_healthy
       mysql:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-replica:
         condition: service_healthy
     volumes:
       - ./toxiproxy-config.json:/config/toxiproxy.json
@@ -77,6 +114,8 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://toxiproxy:3307/stockdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
       SPRING_KAFKA_BOOTSTRAP_SERVERS: toxiproxy:29093
+      SPRING_DATA_REDIS_HOST: toxiproxy
+      SPRING_DATA_REDIS_PORT: 26379
     ports:
       - "8080:8080"
     networks:
@@ -87,6 +126,10 @@ services:
       kafka:
         condition: service_healthy
       mysql:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-replica:
         condition: service_healthy
 
 networks:
