@@ -1,6 +1,7 @@
 package com.example.Thesis.service;
 
 import com.example.Thesis.dto.StockEventDto;
+import io.micrometer.core.instrument.Counter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +18,10 @@ public class KafkaProducerService {
 
     private final KafkaTemplate<String, StockEventDto> kafkaTemplate;
 
+    // Metrics
+    private final Counter kafkaProducerSuccessCounter;
+    private final Counter kafkaProducerFailureCounter;
+
     @Value("${spring.kafka.topic.stock-events}")
     private String stockEventsTopic;
 
@@ -30,19 +35,22 @@ public class KafkaProducerService {
 
             future.whenComplete((result, ex) -> {
                 if (ex == null) {
+                    kafkaProducerSuccessCounter.increment();
                     log.info("Stock event sent successfully: eventId={}, offset={}, partition={}",
                             event.getEventId(),
                             result.getRecordMetadata().offset(),
                             result.getRecordMetadata().partition());
                 } else {
+                    kafkaProducerFailureCounter.increment();
                     log.error("Failed to send stock event: eventId={}, error={}",
                             event.getEventId(), ex.getMessage(), ex);
                 }
             });
         } catch (Exception e) {
+            kafkaProducerFailureCounter.increment();
             log.error("Exception while sending stock event: eventId={}, error={}",
                     event.getEventId(), e.getMessage(), e);
-            throw new RuntimeException("Failed to send Kafka message", e);
+            // Do NOT throw - allow stock operation to succeed even if Kafka is down
         }
     }
 }

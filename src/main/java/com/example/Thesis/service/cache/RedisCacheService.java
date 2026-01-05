@@ -2,6 +2,8 @@ package com.example.Thesis.service.cache;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,53 +28,74 @@ public class RedisCacheService implements CacheService {
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
 
+    // Metrics
+    private final Counter cacheHitCounter;
+    private final Counter cacheMissCounter;
+    private final Timer cacheGetTimer;
+    private final Timer cacheSetTimer;
+    private final Timer cacheDeleteTimer;
+    private final Counter redisReconnectCounter;
+
     @Override
     public <T> void set(String key, T value, Duration ttl) {
-        try {
-            String jsonValue = objectMapper.writeValueAsString(value);
-            redisTemplate.opsForValue().set(key, jsonValue, ttl);
-            log.debug("Cache SET: key={}, ttl={}", key, ttl);
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize value for key: {}", key, e);
-            throw new RuntimeException("Cache serialization failed", e);
-        } catch (Exception e) {
-            // Graceful degradation - log but don't fail the operation
-            log.warn("Failed to set cache key: {} - {}", key, e.getMessage());
-        }
+        cacheSetTimer.record(() -> {
+            try {
+                String jsonValue = objectMapper.writeValueAsString(value);
+                redisTemplate.opsForValue().set(key, jsonValue, ttl);
+                log.debug("Cache SET: key={}, ttl={}", key, ttl);
+            } catch (JsonProcessingException e) {
+                log.error("Failed to serialize value for key: {}", key, e);
+                throw new RuntimeException("Cache serialization failed", e);
+            } catch (Exception e) {
+                // Graceful degradation - log but don't fail the operation
+                redisReconnectCounter.increment();
+                log.warn("Failed to set cache key: {} - {}", key, e.getMessage());
+            }
+        });
     }
 
     @Override
     public <T> Optional<T> get(String key, Class<T> type) {
-        try {
-            String jsonValue = redisTemplate.opsForValue().get(key);
+        return cacheGetTimer.record(() -> {
+            try {
+                String jsonValue = redisTemplate.opsForValue().get(key);
 
-            if (jsonValue == null) {
-                log.debug("Cache MISS: key={}", key);
+                if (jsonValue == null) {
+                    cacheMissCounter.increment();
+                    log.debug("Cache MISS: key={}", key);
+                    return Optional.empty();
+                }
+
+                T value = objectMapper.readValue(jsonValue, type);
+                cacheHitCounter.increment();
+                log.debug("Cache HIT: key={}", key);
+                return Optional.of(value);
+
+            } catch (JsonProcessingException e) {
+                log.error("Failed to deserialize value for key: {}", key, e);
+                cacheMissCounter.increment();
+                return Optional.empty();
+            } catch (Exception e) {
+                // Graceful degradation - treat as cache miss
+                redisReconnectCounter.increment();
+                cacheMissCounter.increment();
+                log.warn("Failed to get cache key: {} - {}", key, e.getMessage());
                 return Optional.empty();
             }
-
-            T value = objectMapper.readValue(jsonValue, type);
-            log.debug("Cache HIT: key={}", key);
-            return Optional.of(value);
-
-        } catch (JsonProcessingException e) {
-            log.error("Failed to deserialize value for key: {}", key, e);
-            return Optional.empty();
-        } catch (Exception e) {
-            // Graceful degradation - treat as cache miss
-            log.warn("Failed to get cache key: {} - {}", key, e.getMessage());
-            return Optional.empty();
-        }
+        });
     }
 
     @Override
     public void delete(String key) {
-        try {
-            Boolean deleted = redisTemplate.delete(key);
-            log.debug("Cache DELETE: key={}, deleted={}", key, deleted);
-        } catch (Exception e) {
-            log.warn("Failed to delete cache key: {} - {}", key, e.getMessage());
-        }
+        cacheDeleteTimer.record(() -> {
+            try {
+                Boolean deleted = redisTemplate.delete(key);
+                log.debug("Cache DELETE: key={}, deleted={}", key, deleted);
+            } catch (Exception e) {
+                redisReconnectCounter.increment();
+                log.warn("Failed to delete cache key: {} - {}", key, e.getMessage());
+            }
+        });
     }
 
     @Override
