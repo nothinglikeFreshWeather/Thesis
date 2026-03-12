@@ -1,0 +1,91 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ─────────────────────────────────────────
+  # CI: Test & Build
+  # ─────────────────────────────────────────
+  build-and-test:
+    name: 🧪 Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: ✅ Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: 🧪 Run tests
+        run: ./gradlew test
+
+      - name: 🏗️ Build JAR (skip tests — already ran)
+        run: ./gradlew build -x test
+
+      - name: 📊 Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()   # başarısız olsa da raporu yükle
+        with:
+          name: test-results
+          path: build/reports/tests/test/
+
+      - name: 📦 Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: build/libs/*.jar
+
+  # ─────────────────────────────────────────
+  # CD: Docker Image Build & Push (sadece main branch)
+  # ─────────────────────────────────────────
+  docker:
+    name: 🐳 Docker Build & Push
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write   # GHCR'a push için gerekli
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}  # otomatik — ek secret gerekmez
+
+      - name: 🏷️ Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: 🐳 Build & Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max   # Docker layer cache — build hızlanır
