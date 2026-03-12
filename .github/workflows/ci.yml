@@ -13,13 +13,15 @@ jobs:
   build-and-test:
     name: 🧪 Test & Build
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: ☕ Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v4.7.0
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -35,14 +37,14 @@ jobs:
         run: ./gradlew build -x test
 
       - name: 📊 Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         if: always()   # başarısız olsa da raporu yükle
         with:
           name: test-results
           path: build/reports/tests/test/
 
       - name: 📦 Upload JAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: app-jar
           path: build/libs/*.jar
@@ -62,7 +64,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 🔑 Login to GitHub Container Registry
         uses: docker/login-action@v3
