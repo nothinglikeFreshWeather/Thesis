@@ -56,6 +56,13 @@ cache:
   ttl:
     stock: 300  # 5 minutes in seconds
 
+# Rate Limit Configuration
+rate-limit:
+  global:
+    capacity: 50        # Maksimum kova boyutu
+    refill-tokens: 50   # Her yenilenmede verilecek token sayısı
+    refill-duration-ms: 1000 # Hangi sıklıkla yenileneceği (1 saniye = 1000ms)
+
 # Logging Configuration
 logging:
   level:

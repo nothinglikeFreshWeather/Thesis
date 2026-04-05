@@ -106,4 +106,12 @@ public class MetricsConfig {
                 .description("Stock delete operation duration")
                 .register(registry);
     }
+
+    // Rate Limiting Metrics
+    @Bean
+    public Counter rateLimitExceededCounter(MeterRegistry registry) {
+        return Counter.builder("rate_limit_exceeded_total")
+                .description("Total number of requests that exceeded the rate limit (HTTP 429)")
+                .register(registry);
+    }
 }

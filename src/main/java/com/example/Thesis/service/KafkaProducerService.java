@@ -25,6 +25,10 @@ public class KafkaProducerService {
     @Value("${spring.kafka.topic.stock-events}")
     private String stockEventsTopic;
 
+    /**
+     * Asenkron gönderim – eski API uyumluluğu için saklandı.
+     * Artık StockService doğrudan bunu çağırmaz; OutboxScheduler üzerinden çalışır.
+     */
     public void sendStockEvent(StockEventDto event) {
         log.info("Attempting to send stock event to Kafka: eventId={}, type={}, product={}",
                 event.getEventId(), event.getEventType(), event.getProductName());
@@ -51,6 +55,35 @@ public class KafkaProducerService {
             log.error("Exception while sending stock event: eventId={}, error={}",
                     event.getEventId(), e.getMessage(), e);
             // Do NOT throw - allow stock operation to succeed even if Kafka is down
+        }
+    }
+
+    /**
+     * Senkron gönderim – OutboxScheduler tarafından kullanılır.
+     *
+     * <p>Gönderim sonucunu (başarı / hata) kesin olarak bilmek için
+     * CompletableFuture.get() ile bloklar. Hata durumunda exception fırlatır;
+     * OutboxScheduler retry mantığını bu exception üzerine kurar.</p>
+     *
+     * @throws RuntimeException Kafka'ya gönderim başarısız olursa
+     */
+    public void sendStockEventSync(StockEventDto event) {
+        log.info("[Outbox→Kafka] Senkron gönderim: eventId={}, type={}, product={}",
+                event.getEventId(), event.getEventType(), event.getProductName());
+        try {
+            SendResult<String, StockEventDto> result = kafkaTemplate
+                    .send(stockEventsTopic, event.getStockId().toString(), event)
+                    .get(); // blok — timeout KafkaProducerConfig'de tanımlı
+
+            kafkaProducerSuccessCounter.increment();
+            log.info("[Outbox→Kafka] Başarı: eventId={}, offset={}, partition={}",
+                    event.getEventId(),
+                    result.getRecordMetadata().offset(),
+                    result.getRecordMetadata().partition());
+        } catch (Exception e) {
+            kafkaProducerFailureCounter.increment();
+            log.error("[Outbox→Kafka] Hata: eventId={}, error={}", event.getEventId(), e.getMessage(), e);
+            throw new RuntimeException("Kafka gönderimi başarısız: " + event.getEventId(), e);
         }
     }
 }
