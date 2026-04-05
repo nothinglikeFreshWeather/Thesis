@@ -2,7 +2,6 @@ package com.example.Thesis.service;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -24,8 +23,10 @@ public class RateLimitingService {
                 capacity, refillTokens, refillDurationMs);
 
         // Algoritma: Belirli sürede (refillDurationMs) bir miktar (refillTokens) token yenilenir.
-        Refill refill = Refill.greedy(refillTokens, Duration.ofMillis(refillDurationMs));
-        Bandwidth limit = Bandwidth.classic(capacity, refill);
+        Bandwidth limit = Bandwidth.builder()
+                .capacity(capacity)
+                .refillGreedy(refillTokens, Duration.ofMillis(refillDurationMs))
+                .build();
 
         // Sisteme gelen tüm isteklerin tamamını kapsayan global "Bucket" (kova).
         this.globalBucket = Bucket.builder()
