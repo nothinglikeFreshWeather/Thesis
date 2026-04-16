@@ -24,6 +24,9 @@ public class KafkaProducerConfig {
 
     @Value("${spring.kafka.topic.stock-events}")
     private String stockEventsTopic;
+    
+    @Value("${spring.kafka.topic.warehouse-metrics}")
+    private String warehouseMetricsTopic;
 
     @Bean
     public ProducerFactory<String, StockEventDto> producerFactory() {
@@ -63,6 +66,14 @@ public class KafkaProducerConfig {
     @Bean
     public NewTopic stockEventsTopic() {
         return TopicBuilder.name(stockEventsTopic)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+    
+    @Bean
+    public NewTopic warehouseMetricsTopic() {
+        return TopicBuilder.name(warehouseMetricsTopic)
                 .partitions(3)
                 .replicas(1)
                 .build();
