@@ -34,8 +34,20 @@ spring:
         enable.idempotence: true
         max.in.flight.requests.per.connection: 5
         linger.ms: 10
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+        spring.json.type.mapping: "sensorData:com.example.Thesis.dto.SensorDataDto"
+      group-id: warehouse-metrics-group
+      auto-offset-reset: earliest
+      max-poll-records: 500
+    listener:
+      poll-timeout: 3000
     topic:
       stock-events: stock-events
+      warehouse-metrics: warehouse-metrics
   
   # Redis Configuration (via Toxiproxy)
   data:

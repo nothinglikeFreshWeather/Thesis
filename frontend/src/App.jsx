@@ -3,6 +3,7 @@ import { stockApi } from './api/stockApi';
 import StockForm from './components/StockForm';
 import StockList from './components/StockList';
 import GrafanaDashboard from './components/GrafanaDashboard';
+import SensorDashboard from './components/SensorDashboard';
 import './App.css';
 
 export default function App() {
@@ -66,6 +67,12 @@ export default function App() {
                     📦 Stock Management
                 </button>
                 <button
+                    className={`tab ${activeTab === 'sensors' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('sensors')}
+                >
+                    🌡️ IoT Sensors
+                </button>
+                <button
                     className={`tab ${activeTab === 'dashboard' ? 'active' : ''}`}
                     onClick={() => setActiveTab('dashboard')}
                 >
@@ -93,6 +100,8 @@ export default function App() {
                             <StockList stocks={stocks} onRefresh={fetchStocks} />
                         )}
                     </div>
+                ) : activeTab === 'sensors' ? (
+                    <SensorDashboard />
                 ) : (
                     <GrafanaDashboard />
                 )}

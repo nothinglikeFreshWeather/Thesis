@@ -105,6 +105,22 @@ services:
       - ./toxiproxy-config.json:/config/toxiproxy.json
     command: -host=0.0.0.0 -config=/config/toxiproxy.json
 
+  # IoT Sensor Simulator - Mock warehouse sensor data
+  iot-simulator:
+    build:
+      context: ./iot-simulator
+      dockerfile: Dockerfile
+    container_name: iot-sensor-simulator
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=warehouse-metrics
+    networks:
+      - stock-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: always
+
   # Spring Boot Application
   app:
     build:
@@ -131,6 +147,8 @@ services:
         condition: service_healthy
       redis-replica:
         condition: service_healthy
+      iot-simulator:
+        condition: service_started
 
   # Prometheus for metrics collection
   prometheus:

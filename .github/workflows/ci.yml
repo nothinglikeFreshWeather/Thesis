@@ -30,15 +30,15 @@ jobs:
       - name: ✅ Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: 🧪 Run tests
+      - name: 🧪 Run backend tests
         run: ./gradlew test
 
-      - name: 🏗️ Build JAR (skip tests — already ran)
+      - name: 🏗️ Build backend JAR (skip tests)
         run: ./gradlew build -x test
 
       - name: 📊 Upload test report
         uses: actions/upload-artifact@v4.6.2
-        if: always()   # başarısız olsa da raporu yükle
+        if: always()
         with:
           name: test-results
           path: build/reports/tests/test/
@@ -49,18 +49,32 @@ jobs:
           name: app-jar
           path: build/libs/*.jar
 
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 🏗️ Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
   # ─────────────────────────────────────────
-  # CD: Docker Image Build & Push (sadece main branch)
+  # CD: Docker Image Build & Push
   # ─────────────────────────────────────────
   docker:
     name: 🐳 Docker Build & Push
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Trigger on both main and master pushes
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
 
     permissions:
       contents: read
-      packages: write   # GHCR'a push için gerekli
+      packages: write
 
     steps:
       - name: 📥 Checkout code
@@ -71,23 +85,61 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # otomatik — ek secret gerekmez
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ Extract metadata for Docker
-        id: meta
+      - name: 🏷️ Extract metadata for App
+        id: meta-app
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}-app
           tags: |
             type=raw,value=latest
             type=sha,prefix=sha-
 
-      - name: 🐳 Build & Push Docker image
+      - name: 🐳 Build & Push App image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-app.outputs.tags }}
+          labels: ${{ steps.meta-app.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max   # Docker layer cache — build hızlanır
+          cache-to: type=gha,mode=max
+
+      - name: 🏷️ Extract metadata for Frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-frontend
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: 🐳 Build & Push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🏷️ Extract metadata for IoT Simulator
+        id: meta-iot
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-iot-simulator
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: 🐳 Build & Push IoT Simulator image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./iot-simulator
+          push: true
+          tags: ${{ steps.meta-iot.outputs.tags }}
+          labels: ${{ steps.meta-iot.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

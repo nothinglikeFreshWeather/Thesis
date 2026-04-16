@@ -114,4 +114,26 @@ public class MetricsConfig {
                 .description("Total number of requests that exceeded the rate limit (HTTP 429)")
                 .register(registry);
     }
+
+    // Warehouse Sensor Metrics
+    @Bean
+    public Counter warehouseSensorReceivedCounter(MeterRegistry registry) {
+        return Counter.builder("warehouse_sensor_received_total")
+                .description("Total number of sensor data messages received from Kafka")
+                .register(registry);
+    }
+
+    @Bean
+    public Counter warehouseSensorAlertCounter(MeterRegistry registry) {
+        return Counter.builder("warehouse_sensor_alert_total")
+                .description("Total number of temperature alerts generated")
+                .register(registry);
+    }
+
+    @Bean
+    public Counter warehouseSensorErrorCounter(MeterRegistry registry) {
+        return Counter.builder("warehouse_sensor_error_total")
+                .description("Total number of sensor data processing errors")
+                .register(registry);
+    }
 }

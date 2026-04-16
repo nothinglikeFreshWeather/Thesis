@@ -11,52 +11,57 @@ This document describes the architecture of a distributed stock tracking system 
 ### 2.1 High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         User Layer                               │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │           React Frontend (Nginx)                          │  │
-│  │    - Stock Management UI                                  │  │
-│  │    - Embedded Grafana Dashboard                          │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ HTTP/REST
-┌────────────────────────▼────────────────────────────────────────┐
-│                   Application Layer                              │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │       Spring Boot Application (Port 8080)                 │  │
-│  │  ┌────────────┬──────────────┬────────────────────────┐ │  │
-│  │  │ REST API   │ Service Layer│  Repository Layer      │ │  │
-│  │  │ Controller │              │  (Spring Data JPA)     │ │  │
-│  │  └────────────┴──────────────┴────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────┬──────────────┬─────────────────┬─────────────────┬───────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              User Layer                                 │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │              React Frontend (Nginx Reverse Proxy)                  │ │
+│  │    - Stock Management UI      - IoT Sensor Dashboard (SSE)        │ │
+│  │    - Embedded Grafana (Stock + IoT dashboards toggle)             │ │
+│  └───────────────────────────┬───────────────────────────────────────┘ │
+└──────────────────────────────┼─────────────────────────────────────────┘
+                               │  Nginx /api/ → app:8080 (Reverse Proxy)
+┌──────────────────────────────▼─────────────────────────────────────────┐
+│                        Application Layer                                │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │            Spring Boot Application (Port 8080)                    │  │
+│  │  ┌──────────────┬─────────────┬──────────────┬──────────────┐  │  │
+│  │  │ StockCtrl    │ SensorCtrl  │ LoadTestCtrl │ Rate Limit   │  │  │
+│  │  │ REST CRUD    │ REST + SSE  │ Kafka Bench  │ Interceptor  │  │  │
+│  │  └──────┬───────┴──────┬──────┴──────┬───────┴──────────────┘  │  │
+│  │  ┌──────▼──────────────▼─────────────▼──────────────────────┐  │  │
+│  │  │ StockService │ WarehouseMetricsListener │ OutboxScheduler │  │  │
+│  │  │ CacheService │ KafkaProducerService     │ RateLimiting    │  │  │
+│  │  └──────────────┴──────────────────────────┴────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└─────┬──────────────┬─────────────────┬─────────────────┬──────────────┘
       │              │                 │                 │
-      │ JDBC         │ Lettuce        │ Kafka Producer  │ Metrics
-      │              │ Client          │                 │
-┌─────▼──────┐  ┌───▼────┐      ┌────▼─────┐      ┌────▼──────┐
-│            │  │        │      │          │      │           │
-│  Toxiproxy │  │Toxiproxy│     │Toxiproxy │      │Prometheus │
-│  (MySQL)   │  │(Redis) │      │ (Kafka)  │      │(Port 9090)│
-│  :3307     │  │:26379  │      │  :29093  │      │           │
-│            │  │        │      │          │      │           │
-└─────┬──────┘  └───┬────┘      └────┬─────┘      └────┬──────┘
-      │             │                │                  │
-┌─────▼──────┐  ┌──▼─────┐     ┌────▼─────┐      ┌────▼──────┐
+      │ JDBC         │ Lettuce         │ Kafka           │ Actuator
+      │              │ Client          │ Producer +      │ /prometheus
+      │              │                 │ Consumer        │
+┌─────▼──────┐  ┌───▼────┐      ┌─────▼────┐      ┌─────▼─────┐
+│ Toxiproxy  │  │Toxiproxy│     │ Toxiproxy │      │Prometheus │
+│ (MySQL)    │  │(Redis)  │     │ (Kafka)   │      │(Port 9090)│
+│ :3307      │  │:26379   │     │ :29093    │      │           │
+└─────┬──────┘  └───┬────┘      └─────┬────┘      └─────┬─────┘
+      │             │                 │                  │
+┌─────▼──────┐  ┌──▼─────┐     ┌─────▼────┐      ┌─────▼─────┐
 │   MySQL    │  │ Redis  │     │  Kafka   │      │  Grafana  │
-│  Database  │  │ Master │     │  Broker  │      │(Port 3001)│
-│  :3306     │  │ :6379  │     │  :9092   │      │Dashboard  │
-│            │  │        │     │          │      │           │
-│ Source of  │  │ Cache  │     │ Event    │      │Visualize  │
-│ Truth      │  │ Layer  │     │ Stream   │      │Metrics    │
-└────────────┘  └────┬───┘     └──────────┘      └───────────┘
-                     │
-                ┌────▼────┐
-                │ Redis   │
-                │ Replica │
-                │ :6380   │
-                │         │
-                │ Standby │
-                └─────────┘
+│  Database  │  │ Master │     │ (KRaft)  │      │(Port 3001)│
+│  :3306     │  │ :6379  │     │  :9092   │      │ 2 Dash-   │
+│            │  │        │     │          │      │ boards    │
+│ Source of  │  │ Cache +│     │ Topics:  │      │ - Stock   │
+│ Truth +    │  │ Sensor │     │ stock-   │      │ - IoT     │
+│ Outbox     │  │ Data   │     │ events   │      │ Sensors   │
+└────────────┘  └────┬───┘     │ warehouse│      └───────────┘
+                     │         │ -metrics │
+                ┌────▼────┐    └─────▲────┘
+                │ Redis   │          │
+                │ Replica │    ┌─────┴──────────┐
+                │ :6380   │    │ IoT Simulator  │
+                │ Standby │    │ (Python)       │
+                └─────────┘    │ Sends temp     │
+                               │ every 1s       │
+                               └────────────────┘
 ```
 
 ---
@@ -89,6 +94,13 @@ StockController
 ├─ PUT    /api/stocks/{id}     (Update stock)
 └─ DELETE /api/stocks/{id}     (Delete stock)
 
+SensorController
+├─ GET    /api/sensors/stream/{deviceId}         (SSE real-time stream)
+├─ GET    /api/sensors/current/{deviceId}        (Latest reading from Redis)
+├─ GET    /api/sensors/alerts/{deviceId}         (Alert list)
+├─ GET    /api/sensors/alerts/{deviceId}/clear   (Clear alerts)
+└─ GET    /api/sensors/health/{deviceId}         (Sensor health)
+
 LoadTestController
 ├─ POST   /api/load-test/kafka?count=10000
 └─ POST   /api/load-test/kafka/batch
@@ -97,10 +109,10 @@ LoadTestController
 ##### **3.1.2 Service Layer**
 ```
 StockService
-├─ createStock()    → MySQL write → Redis cache → Kafka event
-├─ updateStock()    → MySQL update → Redis invalidate → Kafka event
+├─ createStock()    → MySQL write → Outbox insert → Redis cache
+├─ updateStock()    → MySQL update → Outbox insert → Redis invalidate
 ├─ getStock()       → Redis check → MySQL fallback
-└─ deleteStock()    → MySQL delete → Redis delete → Kafka event
+└─ deleteStock()    → MySQL delete → Outbox insert → Redis delete
 
 CacheService (Redis)
 ├─ get()            → Lettuce GET with timeout
@@ -108,7 +120,21 @@ CacheService (Redis)
 └─ delete()         → Lettuce DEL
 
 KafkaProducerService
-└─ sendStockEvent() → Async send with callbacks
+├─ sendStockEvent()     → Async send with callbacks
+└─ sendStockEventSync() → Synchronous send (used by OutboxScheduler)
+
+WarehouseMetricsListener (Kafka Consumer)
+├─ handleSensorData()          → Receive from 'warehouse-metrics' topic
+├─ storeSensorDataInRedis()    → SET sensor:{deviceId} (TTL: 5 min)
+└─ generateTemperatureAlert()  → LPUSH alert:{deviceId} if temp > 30°C
+
+OutboxScheduler (Transactional Outbox)
+├─ processOutboxEvents()  → Poll PENDING events every 5s
+├─ processEvent()         → Send to Kafka → mark SENT / FAILED
+└─ Max retries: 5         → After 5 failures → status = FAILED
+
+RateLimitingService (Token Bucket)
+└─ tryConsume()  → Bucket4j global limiter (50 req/s default)
 ```
 
 ##### **3.1.3 Configuration**
@@ -121,10 +147,28 @@ enable.idempotence: true     # No duplicates
 linger.ms: 10                # Small batching
 ```
 
+**Kafka Consumer (warehouse-metrics):**
+```yaml
+value-deserializer: JsonDeserializer
+default-type: SensorDataDto
+auto-offset-reset: earliest
+use-type-info-headers: false  # Python producer sends no type headers
+concurrency: 3
+ack-mode: RECORD              # Single-record processing (not batch)
+```
+
 **Redis:**
 ```yaml
 timeout: 5000ms              # Connection timeout
 lettuce.pool.max-active: 8   # Connection pool
+```
+
+**Rate Limiting (Bucket4j):**
+```yaml
+rate-limit.global:
+  capacity: 50               # Max bucket size
+  refill-tokens: 50          # Tokens per refill
+  refill-duration-ms: 1000   # Refill interval
 ```
 
 ---
@@ -180,19 +224,25 @@ Cache-Aside (Fallback):
 - **Eviction:** TTL-based
 - **Client:** Lettuce (async, non-blocking)
 
-#### **3.2.3 Kafka Event Stream**
+#### **3.2.3 Kafka Event Stream (KRaft Mode — No Zookeeper)**
 
 **Role:** Event Bus (Async Communication)
 
-**Topic:**
+**Topics:**
 ```
-stock-events
+stock-events              (Stock CRUD events → Outbox-based delivery)
 ├─ Partitions: 3
 ├─ Replication Factor: 1 (single broker setup)
 └─ Retention: 7 days
+
+warehouse-metrics         (IoT sensor data → consumed by WarehouseMetricsListener)
+├─ Partitions: 3
+├─ Replication Factor: 1
+├─ Producer: Python IoT Simulator (JSON, no type headers)
+└─ Consumer Group: warehouse-metrics-group
 ```
 
-**Event Schema:**
+**Stock Event Schema:**
 ```json
 {
   "eventId": "uuid",
@@ -205,6 +255,15 @@ stock-events
 }
 ```
 
+**Sensor Data Schema (from IoT Simulator):**
+```json
+{
+  "cihazId": "depo-sensor-1",
+  "sicaklik": 24.5,
+  "zaman": "2026-04-09T12:03:10.143759Z"
+}
+```
+
 **Producer Configuration:**
 - **Acks:** all (wait for leader + replicas)
 - **Idempotence:** Enabled
@@ -212,8 +271,8 @@ stock-events
 
 **Characteristics:**
 - **CAP Position (Kafka itself):** CP
-- **CAP Position (Our Implementation):** AP with event loss risk
-- **Delivery:** At-least-once (with acks=all)
+- **Stock Events:** Reliable delivery via Outbox Pattern (at-least-once)
+- **Sensor Data:** Direct Kafka produce from Python (at-most-once from simulator side)
 
 ---
 
@@ -313,21 +372,45 @@ kafka-proxy (29093)   → kafka:9092
 
 #### **Technology Stack:**
 - **Framework:** React 18 + Vite
-- **Container:** Nginx (port 3000)
-- **API Client:** Axios
+- **Container:** Nginx reverse proxy (port 3000 → internal 80)
+- **API Client:** Native `fetch` + `EventSource` (no Axios)
+- **Charting:** Native HTML5 Canvas API (zero dependencies)
 
 #### **Features:**
-1. **Stock Management**
+1. **📦 Stock Management**
    - CRUD operations for stocks
    - Real-time list updates
 
-2. **Embedded Grafana Dashboard**
-   - iframe integration
-   - Anonymous access enabled
+2. **🌡️ IoT Sensor Dashboard** (NEW)
+   - Dynamic device ID input with connect/disconnect
+   - Live SSE (Server-Sent Events) stream for real-time data
+   - Stat cards: Temperature (color-coded), Status, Alert count, Data point count
+   - Canvas-based temperature timeline chart (last 60 readings)
+   - Alert management panel with clear function
 
-3. **CORS Configuration:**
-   - Allowed origins: http://localhost:3000
-   - Credentials: false
+3. **📊 Metrics Dashboard**
+   - Dual Grafana dashboard toggle (Stock Metrics ↔ IoT Sensor Metrics)
+   - iframe integration, anonymous access
+
+#### **Nginx Reverse Proxy (`nginx.conf`):**
+```nginx
+location /api/ {
+    proxy_pass http://app:8080/api/;  # Route to Spring Boot
+    proxy_buffering off;              # SSE support
+    proxy_cache off;
+    proxy_read_timeout 300s;          # 5 min for SSE
+}
+```
+This eliminates CORS entirely in Docker — all requests share the same origin.
+
+#### **API Configuration:**
+- All API URLs use **relative paths** (`/api/...`) — no hardcoded `localhost`
+- Docker: Nginx proxies `/api/` → `app:8080`
+- Dev mode: Vite proxy (`vite.config.js`) forwards `/api` → `localhost:8080`
+
+#### **CORS Configuration (Backup for non-proxy access):**
+- Allowed origins: `http://localhost:3000`, `http://127.0.0.1:3000`
+- Credentials: false
 
 ---
 
@@ -561,19 +644,19 @@ Kafka Producer:   5 in-flight requests
 
 ### 7.1 Docker Compose Setup
 
-**Services:**
+**Services (11 containers):**
 ```yaml
 services:
-  mysql:          # Port 3306 (internal)
-  redis-master:   # Port 6379 (internal)
-  redis-replica:  # Port 6380 (internal)
-  kafka:          # Port 9092 (internal)
-  zookeeper:      # Port 2181 (internal)
+  mysql:          # Port 3306 (internal) — Source of truth + Outbox table
+  redis-master:   # Port 6379 (internal) — Cache + Sensor data store
+  redis-replica:  # Port 6380 (internal) — Read-only standby
+  kafka:          # Port 9092 (internal) — KRaft mode (no Zookeeper)
   toxiproxy:      # Port 8474 (API), proxy ports (3307, 26379, 29093)
-  app:            # Port 8080 (exposed)
-  prometheus:     # Port 9090 (exposed)
-  grafana:        # Port 3001 (exposed)
-  frontend:       # Port 3000 (exposed)
+  iot-simulator:  # Python — sends temp data to warehouse-metrics every 1s
+  app:            # Port 8080 (exposed) — Spring Boot backend
+  prometheus:     # Port 9090 (exposed) — Metrics scraping
+  grafana:        # Port 3001 (exposed) — 2 dashboards (Stock + IoT)
+  frontend:       # Port 3000 (exposed) — Nginx + React SPA
 ```
 
 **Network:**
@@ -808,26 +891,45 @@ try {
 
 ---
 
-### 10.3 No Outbox Pattern
+### 10.3 Transactional Outbox Pattern (Implemented)
 
-**Decision:** Direct Kafka send (no outbox table)
+**Decision:** Outbox table for reliable Kafka delivery
 
-**Reasons:**
-1. Simplicity - No additional table
-2. Demonstration - Shows event loss scenario
-3. Academic - Illustrates AP trade-off
-
-**Trade-off:**
-- Event loss during partition ❌
-- No eventual consistency guarantee
-
-**Production Recommendation:**
+**Implementation:**
 ```
-Use Outbox Pattern or CDC (Debezium) for:
-  - Guaranteed event delivery
-  - Transactional consistency
-  - At-least-once delivery
+StockService.create/update/delete()
+  │
+  ├─ @Transactional: MySQL save + Outbox INSERT (same TX)
+  │
+  └─ OutboxScheduler (every 5 seconds):
+       ├─ SELECT * FROM outbox_events WHERE status = 'PENDING' LIMIT 50
+       ├─ For each event → kafkaProducerService.sendStockEventSync()
+       │   ├─ Success → status = SENT
+       │   └─ Failure → retryCount++ (max 5 → status = FAILED)
+       └─ Prometheus metrics: outbox_events_total{result=sent|failed|retried}
 ```
+
+**Outbox Table Schema:**
+```sql
+CREATE TABLE outbox_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_id VARCHAR(36) UNIQUE NOT NULL,
+    event_type VARCHAR(20) NOT NULL,
+    stock_id BIGINT NOT NULL,
+    payload TEXT NOT NULL,          -- JSON serialized StockEventDto
+    status ENUM('PENDING','SENT','FAILED') NOT NULL DEFAULT 'PENDING',
+    retry_count INT NOT NULL DEFAULT 0,
+    last_error VARCHAR(500),
+    created_at TIMESTAMP NOT NULL,
+    processed_at TIMESTAMP
+);
+```
+
+**Benefits:**
+- **Zero event loss during Kafka partition** — events survive in MySQL
+- **Transactional consistency** — stock write + outbox insert in same TX
+- **At-least-once delivery** — retries with exponential backoff
+- **Observability** — Prometheus gauge for pending event count
 
 ---
 
@@ -855,23 +957,27 @@ This architecture demonstrates a **pragmatic AP-focused** distributed system wit
 
 **Key Achievements:**
 1. ✅ **Graceful Degradation** - System remains operational during component failures
-2. ✅ **Observability** - Comprehensive metrics and dashboards
+2. ✅ **Observability** - 30+ custom Prometheus metrics, 2 Grafana dashboards, real-time SSE frontend
 3. ✅ **Fault Injection** - Realistic partition testing via Toxiproxy
 4. ✅ **Performance** - Low memory footprint, high throughput
 5. ✅ **CAP Demonstration** - Clear trade-offs between consistency and availability
+6. ✅ **Reliable Delivery** - Transactional Outbox Pattern for zero event loss
+7. ✅ **IoT Integration** - End-to-end sensor pipeline (Python → Kafka → Redis → SSE → React)
+8. ✅ **Rate Limiting** - Token-bucket API protection with Bucket4j
 
 **CAP Summary:**
-- **CP:** MySQL (source of truth)
-- **AP:** Redis (cache), Kafka implementation (best-effort events)
+- **CP:** MySQL (source of truth + outbox)
+- **AP:** Redis (cache + sensor store), Kafka consumer (best-effort processing)
+- **Outbox:** Converts stock events from AP to eventual consistency (at-least-once)
 - **System:** AP-prioritized with graceful degradation
 
-**Production Improvements:**
-1. Implement Outbox Pattern for Kafka events
-2. Add Redis Sentinel for automatic failover
-3. Use multi-broker Kafka cluster
-4. Implement circuit breakers (Resilience4j)
-5. Add distributed tracing (Zipkin/Jaeger)
-6. Reduce Redis timeout (5s → 2s)
+**Remaining Production Improvements:**
+1. Add Redis Sentinel for automatic failover
+2. Use multi-broker Kafka cluster
+3. Implement circuit breakers (Resilience4j)
+4. Add distributed tracing (Zipkin/Jaeger)
+5. Reduce Redis timeout (5s → 2s)
+6. Add dead-letter queue for permanently failed outbox events
 
 ---
 
@@ -881,25 +987,32 @@ This architecture demonstrates a **pragmatic AP-focused** distributed system wit
 
 ```
 Java: 17
-Spring Boot: 3.2.0
+Spring Boot: 3.x
 Gradle: 8.5
-Kafka: 3.6
-Redis: 7.2
+Kafka: 4.1.1 (KRaft, no Zookeeper)
+Redis: 7-alpine
 MySQL: 8.0
-Prometheus: 2.45
-Grafana: 10.0
-Toxiproxy: 2.5
+Prometheus: latest
+Grafana: latest
+Toxiproxy: latest
 React: 18
-Vite: 5
+Vite: 6.x
+Python: 3.11 (IoT Simulator)
+Bucket4j: (Rate Limiting)
+Nginx: alpine (Frontend reverse proxy)
 ```
 
 ### B. Key Configuration Files
 
 - `application.yaml` - Spring Boot configuration
-- `docker-compose.yml` - Container orchestration
+- `docker-compose.yml` - Container orchestration (11 services)
 - `prometheus.yml` - Metrics scraping config
-- `stock-metrics.json` - Grafana dashboard
+- `grafana/dashboards/stock-metrics.json` - Stock Grafana dashboard
+- `grafana/dashboards/iot-sensors.json` - IoT Sensor Grafana dashboard
 - `toxiproxy-config.json` - Proxy initialization
+- `frontend/nginx.conf` - Nginx reverse proxy + SSE support
+- `frontend/vite.config.js` - Dev server proxy config
+- `iot-simulator/sensor_simulator.py` - Python IoT data generator
 
 ### C. Useful Commands
 
