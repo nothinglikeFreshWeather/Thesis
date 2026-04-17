@@ -3,9 +3,14 @@ package com.example.Thesis.service;
 import com.example.Thesis.dto.StockEventDto;
 import com.example.Thesis.dto.StockRequestDto;
 import com.example.Thesis.dto.StockResponseDto;
+import com.example.Thesis.model.OutboxEvent;
+import com.example.Thesis.model.OutboxEventStatus;
 import com.example.Thesis.model.Stock;
+import com.example.Thesis.repository.OutboxEventRepository;
 import com.example.Thesis.repository.StockRepository;
 import com.example.Thesis.service.cache.CacheService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +28,8 @@ import java.util.stream.Collectors;
 public class StockService {
 
         private final StockRepository stockRepository;
-        private final KafkaProducerService kafkaProducerService;
+        private final OutboxEventRepository outboxEventRepository;
+        private final ObjectMapper objectMapper;
         private final CacheService cacheService;
 
         // Metrics
@@ -64,14 +70,15 @@ public class StockService {
                         cacheService.set(cacheKey, response, CACHE_TTL);
                         log.debug("Cached new stock: key={}", cacheKey);
 
-                        // Send Kafka event
+                        // Write to Outbox — same transaction as DB save.
+                        // OutboxScheduler will deliver to Kafka with retries.
                         StockEventDto event = StockEventDto.create(
                                         StockEventDto.EventType.CREATED,
                                         savedStock.getId(),
                                         savedStock.getProductName(),
                                         savedStock.getQuantity(),
                                         savedStock.getPrice());
-                        kafkaProducerService.sendStockEvent(event);
+                        saveToOutbox(event);
 
                         return response;
                 });
@@ -147,14 +154,14 @@ public class StockService {
                         cacheService.set(cacheKey, response, CACHE_TTL);
                         log.debug("Updated cache for stock: key={}", cacheKey);
 
-                        // Send Kafka event
+                        // Write to Outbox — same transaction as DB update.
                         StockEventDto event = StockEventDto.create(
                                         StockEventDto.EventType.UPDATED,
                                         updatedStock.getId(),
                                         updatedStock.getProductName(),
                                         updatedStock.getQuantity(),
                                         updatedStock.getPrice());
-                        kafkaProducerService.sendStockEvent(event);
+                        saveToOutbox(event);
 
                         return response;
                 });
@@ -178,16 +185,40 @@ public class StockService {
                         cacheService.delete(cacheKey);
                         log.debug("Invalidated cache for deleted stock: key={}", cacheKey);
 
-                        // Send Kafka event
+                        // Write to Outbox — same transaction as DB delete.
                         StockEventDto event = StockEventDto.create(
                                         StockEventDto.EventType.DELETED,
                                         stock.getId(),
                                         stock.getProductName(),
                                         stock.getQuantity(),
                                         stock.getPrice());
-                        kafkaProducerService.sendStockEvent(event);
+                        saveToOutbox(event);
                         return null;
                 });
+        }
+
+        /**
+         * Writes a stock event into the outbox_events table.
+         * Called within an active @Transactional context so the outbox insert
+         * is atomic with the stock mutation — if either fails, both roll back.
+         */
+        private void saveToOutbox(StockEventDto event) {
+                try {
+                        String payload = objectMapper.writeValueAsString(event);
+                        OutboxEvent outboxEvent = new OutboxEvent();
+                        outboxEvent.setEventId(event.getEventId());
+                        outboxEvent.setEventType(event.getEventType().name());
+                        outboxEvent.setStockId(event.getStockId());
+                        outboxEvent.setPayload(payload);
+                        outboxEvent.setStatus(OutboxEventStatus.PENDING);
+                        outboxEventRepository.save(outboxEvent);
+                        log.debug("[Outbox] Event saved: eventId={}, type={}", event.getEventId(), event.getEventType());
+                } catch (JsonProcessingException e) {
+                        // This should never happen with a well-formed DTO.
+                        // Throwing here causes the parent @Transactional to roll back,
+                        // so the stock mutation is also undone — data stays consistent.
+                        throw new RuntimeException("Failed to serialize stock event for outbox", e);
+                }
         }
 
         private StockResponseDto mapToResponseDto(Stock stock) {
@@ -200,3 +231,4 @@ public class StockService {
                                 stock.getUpdatedAt());
         }
 }
+

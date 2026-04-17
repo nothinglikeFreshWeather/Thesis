@@ -1,0 +1,1311 @@
+%% ============================================================
+%%  Stock Tracking System — Technical Paper
+%%  Author  : Alper
+%%  Date    : April 2026
+%%  Engine  : pdfLaTeX
+%% ============================================================
+\documentclass[12pt,a4paper,twoside]{article}
+
+%% ---- Encoding & Language ----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[turkish,english]{babel}   % English primary, Turkish support
+
+%% ---- Typography ----
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{setspace}
+\onehalfspacing
+
+%% ---- Page Geometry ----
+\usepackage[
+  a4paper,
+  top=2.5cm, bottom=2.5cm,
+  left=3cm,  right=2.5cm,
+  headheight=15pt
+]{geometry}
+
+%% ---- Headers & Footers ----
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\small\thepage}
+\fancyhead[RE]{\small\textit{Stock Tracking System}}
+\fancyhead[LO]{\small\textit{\leftmark}}
+\renewcommand{\headrulewidth}{0.4pt}
+
+%% ---- Graphics & Color ----
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{pgf-pie}
+\usetikzlibrary{
+  shapes.geometric, shapes.multipart, shapes.symbols,
+  arrows.meta, positioning, fit, backgrounds,
+  decorations.pathmorphing, calc, patterns, shadows
+}
+
+%% ---- Tables ----
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+
+%% ---- Listings (code blocks) ----
+\usepackage{listings}
+\usepackage{lstautogobble}
+
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codeframe}{HTML}{CCCCCC}
+\definecolor{keyword}{HTML}{0033B3}
+\definecolor{string}{HTML}{067D17}
+\definecolor{comment}{HTML}{8C8C8C}
+\definecolor{number}{HTML}{1750EB}
+
+\lstdefinestyle{javaStyle}{
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keyword}\bfseries,
+  stringstyle=\color{string},
+  commentstyle=\color{comment}\itshape,
+  numberstyle=\tiny\color{number},
+  numbers=left, numbersep=6pt,
+  breaklines=true, autogobble=true,
+  tabsize=2,
+  language=Java
+}
+
+\lstdefinestyle{yamlStyle}{
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keyword}\bfseries,
+  stringstyle=\color{string},
+  commentstyle=\color{comment}\itshape,
+  breaklines=true, autogobble=true,
+  tabsize=2,
+  language=bash
+}
+
+\lstdefinestyle{sqlStyle}{
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keyword}\bfseries,
+  stringstyle=\color{string},
+  commentstyle=\color{comment}\itshape,
+  breaklines=true, autogobble=true,
+  tabsize=2,
+  language=SQL
+}
+
+%% ---- Math ----
+\usepackage{amsmath, amssymb}
+
+%% ---- Hyperlinks (last!) ----
+\usepackage[
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!70!black,
+  urlcolor=blue!70!black,
+  pdftitle={Stock Tracking System: A Distributed Architecture for CAP Theorem Demonstration},
+  pdfauthor={Alper}
+]{hyperref}
+
+%% ---- Caption Formatting ----
+\usepackage{caption}
+\captionsetup{
+  font=small, labelfont=bf,
+  margin=0.5cm
+}
+
+%% ---- Miscellaneous ----
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{subcaption}
+\usepackage{mdframed}
+
+%% ============================================================
+%%  Custom Colors & Macros
+%% ============================================================
+\definecolor{primary}{HTML}{1565C0}
+\definecolor{secondary}{HTML}{0288D1}
+\definecolor{accent}{HTML}{00ACC1}
+\definecolor{success}{HTML}{2E7D32}
+\definecolor{danger}{HTML}{C62828}
+\definecolor{warning}{HTML}{F57F17}
+\definecolor{neutral}{HTML}{546E7A}
+
+\newcommand{\component}[1]{\textcolor{primary}{\textbf{#1}}}
+\newcommand{\tech}[1]{\textit{#1}}
+\newcommand{\cap}[1]{\textbf{\textcolor{primary}{#1}}}
+
+%% ============================================================
+%%  TikZ Node Styles
+%% ============================================================
+\tikzset{
+  svcbox/.style={
+    rectangle, rounded corners=4pt, draw=#1!80!black,
+    fill=#1!20, text centered, minimum width=2.8cm,
+    minimum height=0.8cm, font=\small\bfseries,
+    drop shadow={shadow xshift=1pt, shadow yshift=-1pt,
+                 fill=#1!50!black, opacity=0.3}
+  },
+  arrow/.style={-Stealth, thick, draw=neutral!70},
+  bigbox/.style={
+    rectangle, rounded corners=6pt,
+    draw=neutral!60, fill=neutral!5,
+    inner sep=8pt
+  },
+  layerlabel/.style={
+    font=\bfseries\small, text=neutral
+  },
+  dbcyl/.style={
+    cylinder, shape border rotate=90, draw=#1!80!black,
+    fill=#1!20, aspect=0.3, minimum width=1.8cm,
+    minimum height=1.2cm, font=\small\bfseries
+  },
+  capnode/.style={
+    circle, draw=#1!80!black, fill=#1!20,
+    minimum size=1.4cm, font=\small\bfseries,
+    text centered, text width=1.2cm
+  },
+  msgbox/.style={
+    rectangle, rounded corners=3pt,
+    draw=primary!60, fill=primary!10,
+    font=\ttfamily\small, inner sep=4pt
+  }
+}
+
+%% ============================================================
+\begin{document}
+
+%% ---- Title Page ----
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  {\LARGE\bfseries\color{primary}
+    Stock Tracking System\par}
+
+  \vspace{0.6cm}
+  {\Large\color{secondary}
+    A Distributed Architecture for CAP Theorem Demonstration\par}
+
+  \vspace{1.5cm}
+  \rule{0.65\textwidth}{1.5pt}
+
+  \vspace{1.5cm}
+  {\large Alper\par}
+  \vspace{0.3cm}
+  {\normalsize April 2026\par}
+
+  \vspace{3cm}
+
+  %% Decorative architecture mini-diagram
+  \begin{tikzpicture}[scale=0.85]
+    \node[svcbox=secondary, minimum width=4cm] (fe)   at (0,0)   {React Frontend};
+    \node[svcbox=primary,   minimum width=4cm] (be)   at (0,-1.8) {Spring Boot API};
+    \node[svcbox=success,   minimum width=2cm] (db)   at (-3,-3.6){MySQL};
+    \node[svcbox=accent,    minimum width=2cm] (rd)   at (0,-3.6) {Redis};
+    \node[svcbox=warning,   minimum width=2cm] (kf)   at (3,-3.6) {Kafka};
+    \node[svcbox=neutral,   minimum width=2cm] (pr)   at (-1.5,-5.2){Prometheus};
+    \node[svcbox=neutral,   minimum width=2cm] (gr)   at (1.5,-5.2) {Grafana};
+
+    \draw[arrow] (fe) -- (be);
+    \draw[arrow] (be) -- (db);
+    \draw[arrow] (be) -- (rd);
+    \draw[arrow] (be) -- (kf);
+    \draw[arrow] (be) -- (pr);
+    \draw[arrow] (pr) -- (gr);
+  \end{tikzpicture}
+
+  \vfill
+  {\small\color{neutral}
+    Distributed Systems · Event Streaming · Fault Injection · IoT Integration}
+\end{titlepage}
+
+%% ---- Abstract ----
+\begin{abstract}
+\noindent
+This paper presents the design, implementation, and evaluation of a
+\textbf{distributed stock-tracking system} built to demonstrate the
+\emph{CAP Theorem} in practice.
+The system integrates a \tech{Spring Boot} backend, a \tech{Kafka}
+event-streaming bus, a \tech{Redis} cache layer, a \tech{MySQL}
+relational database, a \tech{Python} IoT sensor simulator, and a
+\tech{React} single-page application — all orchestrated with
+\tech{Docker Compose} across ten containerised services.
+Network partitions are injected deterministically through
+\tech{Toxiproxy}, allowing systematic observation of consistency/avail\-ability
+trade-offs.
+A \tech{Transactional Outbox Pattern} guarantees at-least-once event
+delivery to Kafka during transient broker outages.
+End-to-end observability is achieved via \tech{Prometheus} metrics and
+dual \tech{Grafana} dashboards for stock operations and IoT sensor data.
+Benchmarks demonstrate a stable throughput of 200 ops/s under normal
+conditions, degrading predictably under injected latency, and maintaining
+\emph{full functional availability} even when the cache or message broker
+are artificially partitioned.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+%% ============================================================
+
+Modern enterprise applications are increasingly built on distributed
+components that communicate over unreliable networks.
+The \emph{CAP Theorem}~\cite{brewer2000towards} formalises an inherent
+tension in such systems: it is impossible to guarantee
+\textbf{Consistency (C)}, \textbf{Availability (A)}, and
+\textbf{Partition Tolerance (P)} simultaneously.
+Real systems must therefore make deliberate architectural choices —
+favouring either \emph{CP} (consistency over availability) or
+\emph{AP} (availability over consistency) during network partitions.
+
+This project implements a production-like stock-tracking platform whose
+primary educational and research objective is to \emph{make those
+trade-offs observable and measurable}.
+Each subsystem (\tech{MySQL}, \tech{Redis}, \tech{Kafka}) occupies a
+different region of the CAP triangle; fault injection via
+\tech{Toxiproxy} triggers real partition scenarios; and
+\tech{Prometheus/Grafana} surfaces the resulting behaviour in real time.
+
+\subsection{Objectives}
+\begin{enumerate}[leftmargin=1.8cm, label=\textbf{O\arabic*.}]
+  \item Design a representative distributed system covering data persistence,
+        caching, event-streaming, and real-time IoT ingestion.
+  \item Implement resilience patterns (Outbox, Cache-Aside, Rate Limiting)
+        that trade consistency for availability where appropriate.
+  \item Provide controlled, repeatable fault-injection experiments via
+        Toxiproxy proxies.
+  \item Surface system behaviour through 30+ Prometheus metrics and two
+        Grafana dashboards (Stock Operations, IoT Sensor Metrics).
+\end{enumerate}
+
+\subsection{Paper Structure}
+
+Section~\ref{sec:arch} describes the overall architecture.
+Section~\ref{sec:components} details each sub-component.
+Section~\ref{sec:dataflow} traces the principal data flows.
+Section~\ref{sec:cap} analyses CAP positions and partition strategies.
+Section~\ref{sec:observability} covers the monitoring stack.
+Section~\ref{sec:iot} details the IoT pipeline.
+Section~\ref{sec:testing} presents fault-injection and load-testing results.
+Section~\ref{sec:design} discusses key design decisions and trade-offs.
+Section~\ref{sec:conclusion} concludes with future work.
+
+%% ============================================================
+\section{System Architecture}
+\label{sec:arch}
+%% ============================================================
+
+\subsection{High-Level Overview}
+
+Figure~\ref{fig:hla} presents the three-layer architecture of the system.
+The \textbf{User Layer} hosts the \tech{React 18} single-page application
+served by an \tech{Nginx} reverse proxy.
+The \textbf{Application Layer} contains the \tech{Spring Boot 3.x} backend,
+which orchestrates all business logic.
+The \textbf{Infrastructure Layer} provides persistent storage (\tech{MySQL 8}),
+in-memory caching (\tech{Redis 7}), event streaming (\tech{Kafka 4.1 KRaft}),
+metrics collection (\tech{Prometheus}), and visualisation (\tech{Grafana}).
+\tech{Toxiproxy} sits transparently in front of each infrastructure
+component, enabling deterministic network partition injection.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.6cm and 0.5cm, scale=0.88, every node/.style={scale=0.88}]
+
+  %% ---- User Layer ----
+  \begin{scope}[on background layer]
+    \node[bigbox, fill=secondary!8, minimum width=12cm, minimum height=1.6cm]
+      (userbox) at (0,0) {};
+  \end{scope}
+  \node[layerlabel, above left=0pt and 4pt of userbox.north west] {User Layer};
+  \node[svcbox=secondary, minimum width=10cm] (fe) at (0,0)
+    {React 18 + Vite \ (Nginx Reverse Proxy : 3000)};
+
+  %% ---- Application Layer ----
+  \begin{scope}[on background layer]
+    \node[bigbox, fill=primary!8, minimum width=12cm, minimum height=1.6cm]
+      (appbox) at (0,-2.2) {};
+  \end{scope}
+  \node[layerlabel, above left=0pt and 4pt of appbox.north west] {Application Layer};
+  \node[svcbox=primary, minimum width=10cm] (be) at (0,-2.2)
+    {Spring Boot 3.x \ (Java 17 · Gradle 8.5 : 8080)};
+
+  %% ---- Infrastructure Layer ----
+  \begin{scope}[on background layer]
+    \node[bigbox, fill=neutral!6, minimum width=12cm, minimum height=2.4cm]
+      (infbox) at (0,-5.0) {};
+  \end{scope}
+  \node[layerlabel, above left=0pt and 4pt of infbox.north west] {Infrastructure Layer};
+
+  \node[svcbox=success, minimum width=2.2cm]  (mysql) at (-4.5,-4.8)  {MySQL\\:3306};
+  \node[svcbox=accent,  minimum width=2.2cm]  (redis) at (-1.5,-4.8)  {Redis\\:6379};
+  \node[svcbox=warning, minimum width=2.2cm]  (kafka) at (1.5,-4.8)   {Kafka\\:9092};
+  \node[svcbox=neutral, minimum width=2.2cm]  (prom)  at (4.5,-4.8)   {Prometheus\\:9090};
+  \node[svcbox=neutral, minimum width=2.2cm]  (graf)  at (4.5,-5.8)   {Grafana\\:3001};
+  \node[svcbox=danger,  minimum width=2.2cm]  (toxi)  at (0,-5.8)     {Toxiproxy\\:8474};
+
+  %% Arrows
+  \draw[arrow] (fe)    -- node[right, font=\tiny]{Nginx /api/} (be);
+  \draw[arrow] (be)    -- (mysql);
+  \draw[arrow] (be)    -- (redis);
+  \draw[arrow] (be)    -- (kafka);
+  \draw[arrow] (be)    -- (prom);
+  \draw[arrow] (prom)  -- (graf);
+  \draw[arrow, dashed, draw=danger!70] (toxi) -- (mysql);
+  \draw[arrow, dashed, draw=danger!70] (toxi) -- (redis);
+  \draw[arrow, dashed, draw=danger!70] (toxi) -- (kafka);
+\end{tikzpicture}
+\caption{High-level three-layer architecture. Dashed red arrows represent
+  Toxiproxy fault injection paths.}
+\label{fig:hla}
+\end{figure}
+
+\subsection{Container Map}
+
+The system runs as \textbf{10 Docker containers} on a custom bridge
+network named \texttt{stock-network} (Table~\ref{tab:containers}).
+
+\begin{table}[H]
+\centering
+\caption{Docker Compose service inventory}
+\label{tab:containers}
+\begin{tabularx}{\textwidth}{@{}lllX@{}}
+\toprule
+\textbf{Container}       & \textbf{Image}              & \textbf{Port(s)}  & \textbf{Role} \\
+\midrule
+\texttt{kafka-kraft}     & apache/kafka:4.1.1          & 9092              & Event streaming (KRaft, no ZooKeeper) \\
+\texttt{mysql-db}        & mysql:8.0                   & 3306              & Source-of-truth + Outbox table \\
+\texttt{redis-master}    & redis:7-alpine              & 6379              & Cache + Sensor data store (R/W) \\
+\texttt{redis-replica}   & redis:7-alpine              & 6380              & Read-only standby \\
+\texttt{toxiproxy}       & shopify/toxiproxy:latest    & 8474, 3307, 26379, 29093 & Network partition injection \\
+\texttt{iot-simulator}   & custom Python               & —                 & Warehouse temperature generator \\
+\texttt{stock-app}       & custom Spring Boot          & 8080              & Business logic + REST API + SSE \\
+\texttt{prometheus}      & prom/prometheus:latest      & 9090              & Metrics scraping (15 s interval) \\
+\texttt{grafana}         & grafana/grafana:latest      & 3001              & Dashboards (Stock + IoT) \\
+\texttt{stock-frontend}  & custom Nginx + React        & 3000              & SPA + reverse proxy \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+%% ============================================================
+\section{Component Architecture}
+\label{sec:components}
+%% ============================================================
+
+\subsection{Backend: Spring Boot Application}
+
+The backend is built on \tech{Spring Boot 3.x} (Java 17, Gradle 8.5)
+and is structured into four horizontal layers: \emph{Controller},
+\emph{Service}, \emph{Repository}, and \emph{Configuration}
+(Figure~\ref{fig:backend}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm and 0.3cm, scale=0.82, every node/.style={scale=0.82}]
+
+  %% Controller row
+  \node[svcbox=secondary, minimum width=2.6cm] (sc)  at (-3.9, 0) {StockCtrl};
+  \node[svcbox=secondary, minimum width=2.6cm] (sec) at (-1.1, 0) {SensorCtrl\\(SSE)};
+  \node[svcbox=secondary, minimum width=2.6cm] (lc)  at (1.7, 0)  {LoadTest\\Ctrl};
+  \node[svcbox=secondary, minimum width=2.6cm] (rl)  at (4.5, 0)  {RateLimit\\Interceptor};
+  \node[layerlabel] at (-6.5,0) {Controllers};
+
+  %% Service row
+  \node[svcbox=primary, minimum width=2.6cm] (ss)  at (-3.9,-1.8) {StockService};
+  \node[svcbox=primary, minimum width=2.6cm] (cs)  at (-1.1,-1.8) {CacheService\\(Lettuce)};
+  \node[svcbox=primary, minimum width=2.6cm] (kps) at (1.7,-1.8)  {KafkaProducer\\Service};
+  \node[svcbox=primary, minimum width=2.6cm] (wml) at (4.5,-1.8)  {Warehouse\\MetricsListener};
+  \node[layerlabel] at (-6.5,-1.8) {Services};
+
+  %% Outbox & Rate
+  \node[svcbox=accent, minimum width=2.6cm] (obs) at (-1.1,-3.4) {Outbox\\Scheduler};
+  \node[svcbox=accent, minimum width=2.6cm] (rls) at (1.7,-3.4)  {RateLimit\\Service};
+  \node[layerlabel] at (-6.5,-3.4) {Schedulers};
+
+  %% Infrastructure row
+  \node[svcbox=success, minimum width=2cm] (mdb) at (-3.9,-5.0) {MySQL};
+  \node[svcbox=warning, minimum width=2cm] (rdb) at (-1.3,-5.0) {Redis};
+  \node[svcbox=danger,  minimum width=2cm] (kbr) at (1.1,-5.0)  {Kafka};
+  \node[svcbox=neutral, minimum width=2cm] (prd) at (3.5,-5.0)  {Prometheus};
+  \node[layerlabel] at (-6.5,-5.0) {Infrastructure};
+
+  %% Arrows — controllers → services
+  \draw[arrow] (sc)  -- (ss);
+  \draw[arrow] (sec) -- (cs);
+  \draw[arrow] (lc)  -- (kps);
+
+  %% services → infra
+  \draw[arrow] (ss)  -- (mdb);
+  \draw[arrow] (cs)  -- (rdb);
+  \draw[arrow] (kps) -- (kbr);
+  \draw[arrow] (obs) -- (kbr);
+  \draw[arrow] (wml) -- (rdb);
+
+  %% Outbox
+  \draw[arrow] (ss) -- (obs);
+\end{tikzpicture}
+\caption{Spring Boot application internal component diagram.}
+\label{fig:backend}
+\end{figure}
+
+\subsubsection{REST API Endpoints}
+
+\begin{lstlisting}[style=javaStyle, caption={Controller endpoint overview}]
+// StockController
+GET    /api/stocks          -> list all stocks
+GET    /api/stocks/{id}     -> get by id
+POST   /api/stocks          -> create stock
+PUT    /api/stocks/{id}     -> update stock
+DELETE /api/stocks/{id}     -> delete stock
+
+// SensorController (SSE + REST)
+GET    /api/sensors/stream/{deviceId}       -> SSE real-time stream
+GET    /api/sensors/current/{deviceId}      -> latest Redis reading
+GET    /api/sensors/alerts/{deviceId}       -> alert list
+GET    /api/sensors/alerts/{deviceId}/clear -> clear alerts
+GET    /api/sensors/health/{deviceId}       -> sensor health
+
+// LoadTestController
+POST   /api/load-test/kafka?count=10000     -> throughput benchmark
+POST   /api/load-test/kafka/batch           -> batch benchmark
+\end{lstlisting}
+
+\subsubsection{Key Dependencies}
+
+\begin{table}[H]
+\centering
+\caption{Spring Boot key dependencies}
+\label{tab:deps}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Artifact}                         & \textbf{Purpose}              & \textbf{Notes} \\
+\midrule
+spring-boot-starter-web                   & REST API                      & Embedded Tomcat \\
+spring-boot-starter-data-jpa              & ORM + Transactions            & HikariCP (10 conn.) \\
+spring-kafka                              & Event streaming               & Producer + Consumer \\
+spring-boot-starter-data-redis            & Cache layer                   & Lettuce async client \\
+spring-boot-starter-actuator              & Health + metrics              & /actuator/prometheus \\
+micrometer-registry-prometheus            & Metrics export                & 15 s scrape interval \\
+bucket4j-core:8.10.1                      & Rate limiting                 & Token-bucket 50 req/s \\
+mysql-connector-j                         & JDBC driver                   & MySQL 8 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Data Layer}
+
+\subsubsection{MySQL — Source of Truth}
+
+MySQL 8.0 serves as the \emph{source of truth} with ACID-compliant
+transactions.
+Two schemas are maintained: the primary \texttt{stocks} table and an
+\texttt{outbox\_events} table that implements the Transactional Outbox
+Pattern (Section~\ref{sec:outbox}).
+
+\begin{lstlisting}[style=sqlStyle, caption={Database schema}]
+CREATE TABLE stocks (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(255) UNIQUE NOT NULL,
+    quantity     INT NOT NULL,
+    price        DECIMAL(19,2) NOT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                   ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE outbox_events (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_id    VARCHAR(36) UNIQUE NOT NULL,
+    event_type  VARCHAR(20)  NOT NULL,           -- CREATED|UPDATED|DELETED
+    stock_id    BIGINT NOT NULL,
+    payload     TEXT NOT NULL,                   -- JSON
+    status      ENUM('PENDING','SENT','FAILED')
+                  NOT NULL DEFAULT 'PENDING',
+    retry_count INT NOT NULL DEFAULT 0,
+    last_error  VARCHAR(500),
+    created_at  TIMESTAMP NOT NULL,
+    processed_at TIMESTAMP
+);
+\end{lstlisting}
+
+\subsubsection{Redis — Cache Layer}
+
+Redis 7 runs in a Master/Replica topology.
+The master handles all reads and writes; the replica provides a
+read-only standby.
+Three caching strategies are employed depending on the operational
+context (Figure~\ref{fig:cache}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.0cm, scale=0.84, every node/.style={scale=0.84}]
+
+  \node[svcbox=primary, minimum width=3cm]  (svc)  at (0,0)   {StockService};
+  \node[svcbox=accent,  minimum width=2.4cm](redis) at (4,0)   {Redis Cache};
+  \node[svcbox=success, minimum width=2.4cm](mysql) at (4,-2)  {MySQL DB};
+
+  %% Write-Through
+  \draw[arrow, draw=success!80] (svc.east) to[bend left=20]
+    node[above, font=\tiny\color{success!80}]{Write-Through (Create/Update)} (redis.west);
+
+  %% Read hit
+  \draw[arrow, draw=accent!80] (redis.west) to[bend left=20]
+    node[below, font=\tiny\color{accent!80}]{Cache HIT → return} (svc.east);
+
+  %% Read miss chain
+  \draw[arrow] (svc) -- node[left,font=\tiny]{MISS} (mysql |- svc) -- (mysql);
+  \draw[arrow, draw=neutral!60] (mysql) to[bend right=20]
+    node[right,font=\tiny]{populate} (redis);
+
+  %% Fallback
+  \node[font=\tiny\itshape, text=danger, align=center] at (2,-3.0)
+    {Cache unavailable → direct DB fallback (no cache write)};
+  \draw[-Stealth, dashed, draw=danger!70] (svc) -- (2,-2.8);
+
+\end{tikzpicture}
+\caption{Redis caching strategies: Write-Through on creation, Read-Through on
+  cache hit, Cache-Aside fallback during partition.}
+\label{fig:cache}
+\end{figure}
+
+Cache TTL is set to \textbf{300 seconds}. The Lettuce client is configured
+with a 5-second connection timeout to trigger graceful degradation
+before overwhelming downstream services.
+
+\subsubsection{Kafka — Event Bus (KRaft Mode)}
+
+Kafka 4.1.1 operates in \emph{KRaft mode} — no ZooKeeper dependency.
+Two topics carry the system's event traffic (Table~\ref{tab:topics}).
+
+\begin{table}[H]
+\centering
+\caption{Kafka topics and configurations}
+\label{tab:topics}
+\begin{tabularx}{\textwidth}{@{}llXl@{}}
+\toprule
+\textbf{Topic}         & \textbf{Partitions} & \textbf{Producer} & \textbf{Consumer} \\
+\midrule
+\texttt{stock-events}      & 3 & Outbox Scheduler (Java, sync) & — (external) \\
+\texttt{warehouse-metrics} & 3 & IoT Simulator (Python, JSON)  & WarehouseMetricsListener \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Producer configuration enforces maximum durability:
+\texttt{acks=all}, \texttt{enable.idempotence=true},
+\texttt{retries=3}, \texttt{linger.ms=10}.
+
+\subsection{Frontend: React + Nginx}
+
+The frontend is a \tech{React 18} SPA bundled with \tech{Vite 6}.
+It is served by an \tech{Nginx} reverse proxy that:
+\begin{enumerate}[noitemsep]
+  \item Forwards \texttt{/api/} to the Spring Boot backend (\texttt{app:8080}),
+        eliminating CORS issues entirely in Docker.
+  \item Disables proxy buffering for \textbf{Server-Sent Events (SSE)}
+        to deliver real-time sensor data to the browser.
+  \item Sets \texttt{proxy\_read\_timeout 300s} to keep SSE connections alive.
+\end{enumerate}
+
+The UI provides three views:
+\begin{itemize}[noitemsep]
+  \item \textbf{Stock Management} — CRUD operations with real-time list refresh.
+  \item \textbf{IoT Sensor Dashboard} — Live SSE temperature stream, alert
+        management, and an HTML5 Canvas time-series chart (last 60 readings).
+  \item \textbf{Metrics Dashboard} — Embedded Grafana iframes with a
+        toggle between stock and IoT sensor dashboards.
+\end{itemize}
+
+\subsection{Fault Injection: Toxiproxy}
+
+\tech{Toxiproxy} acts as a transparent TCP proxy in front of MySQL,
+Redis, and Kafka (Figure~\ref{fig:toxi}).
+Three toxic types are used to simulate distinct network failure modes:
+
+\begin{table}[H]
+\centering
+\caption{Toxiproxy toxic types used in experiments}
+\label{tab:toxics}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Toxic}     & \textbf{Effect} & \textbf{Experiment Purpose} \\
+\midrule
+\texttt{timeout}   & Drop all packets (timeout=0) & Complete component partition \\
+\texttt{latency}   & Add round-trip delay + jitter & Throughput degradation study \\
+\texttt{bandwidth} & Throttle to 1 KB/s & Slow-link simulation \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm and 0.3cm, scale=0.84, every node/.style={scale=0.84}]
+
+  \node[svcbox=primary, minimum width=3cm] (app) at (0,0) {Spring Boot};
+
+  \node[svcbox=danger, minimum width=2cm] (tm) at (-3,-2)
+    {Toxiproxy\\:3307};
+  \node[svcbox=danger, minimum width=2cm] (tr) at (0,-2)
+    {Toxiproxy\\:26379};
+  \node[svcbox=danger, minimum width=2cm] (tk) at (3,-2)
+    {Toxiproxy\\:29093};
+
+  \node[svcbox=success, minimum width=2cm] (mysql) at (-3,-4) {MySQL};
+  \node[svcbox=accent,  minimum width=2cm] (redis) at (0,-4)  {Redis};
+  \node[svcbox=warning, minimum width=2cm] (kafka) at (3,-4)  {Kafka};
+
+  \draw[arrow] (app) -- (tm);
+  \draw[arrow] (app) -- (tr);
+  \draw[arrow] (app) -- (tk);
+  \draw[arrow] (tm)  -- node[right,font=\tiny]{JDBC}    (mysql);
+  \draw[arrow] (tr)  -- node[right,font=\tiny]{Lettuce} (redis);
+  \draw[arrow] (tk)  -- node[right,font=\tiny]{Kafka}   (kafka);
+
+  \node[font=\tiny, text=danger, align=center] at (0,-5)
+    {Toxics injected via REST API: POST /proxies/\{name\}/toxics};
+\end{tikzpicture}
+\caption{Toxiproxy topology. All infrastructure connections from the
+  application pass through a proxy for controllable fault injection.}
+\label{fig:toxi}
+\end{figure}
+
+%% ============================================================
+\section{Data Flow Patterns}
+\label{sec:dataflow}
+%% ============================================================
+
+\subsection{Stock Creation — Happy Path}
+
+Figure~\ref{fig:create} traces the sequence of operations when a client
+creates a new stock item.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm, scale=0.84, every node/.style={scale=0.84}]
+  \foreach \x/\lbl in {0/Client, 2.4/StockCtrl, 4.8/StockService,
+                        7.2/MySQL, 9.6/Redis, 12/Kafka}{
+    \node[svcbox=neutral, minimum width=2cm, font=\small\bfseries]
+      (\lbl) at (\x,0) {\lbl};
+    \draw[dashed, draw=neutral!40] (\x,-0.4) -- (\x,-5.6);
+  }
+
+  %% Messages
+  \draw[arrow] (0,-0.9)  -- node[above,font=\tiny]{POST /api/stocks} (2.4,-0.9);
+  \draw[arrow] (2.4,-1.4)-- node[above,font=\tiny]{createStock()}    (4.8,-1.4);
+  \draw[arrow] (4.8,-2.0)-- node[above,font=\tiny]{save(stock) TX}   (7.2,-2.0);
+  \draw[arrow] (7.2,-2.5)-- node[above,font=\tiny\color{success}]{commit ✓} (4.8,-2.5);
+  \draw[arrow] (4.8,-3.1)-- node[above,font=\tiny]{SET stock:id TTL300}(9.6,-3.1);
+  \draw[arrow] (9.6,-3.6)-- node[above,font=\tiny\color{success}]{OK ✓} (4.8,-3.6);
+  \draw[arrow] (4.8,-4.2)-- node[above,font=\tiny]{sendEvent() async} (12,-4.2);
+  \draw[arrow] (4.8,-5.0)-- node[above,font=\tiny\color{success}]{201 Created ✓}(0,-5.0);
+\end{tikzpicture}
+\caption{Stock creation sequence: synchronous DB write, synchronous cache
+  population, and asynchronous Kafka event dispatch.}
+\label{fig:create}
+\end{figure}
+
+\subsection{Stock Retrieval — Cache Hit vs. Cache Miss}
+
+On a \textbf{cache hit}, the response latency is under 10 ms because
+the data is returned directly from Redis without touching MySQL.
+On a \textbf{cache miss}, the service falls back to MySQL (~50 ms),
+then populates the cache for future requests (write-through).
+
+\subsection{Partition Handling — Redis Down}
+
+When Toxiproxy drops all Redis packets:
+
+\begin{enumerate}[noitemsep]
+  \item CacheService attempts \texttt{GET stock:\{id\}}.
+  \item Lettuce connection times out after 5000 ms.
+  \item A \texttt{RedisConnectionException} is caught silently.
+  \item The \texttt{redis.reconnect.total} counter is incremented.
+  \item MySQL is queried directly — response is returned to client.
+  \item \emph{No cache write} occurs during the partition to prevent
+        stale-entry pollution.
+\end{enumerate}
+
+Result: \textbf{full functional availability} at the cost of higher
+latency (~5050 ms per request).
+
+%% ============================================================
+\section{CAP Theorem Analysis}
+\label{sec:cap}
+%% ============================================================
+
+\subsection{Component-Level CAP Positions}
+
+Figure~\ref{fig:cap} illustrates where each major component sits in the
+CAP triangle.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  %% Triangle
+  \coordinate (C) at (0, 3.5);
+  \coordinate (A) at (-3, 0);
+  \coordinate (P) at (3, 0);
+  \draw[thick, draw=neutral!60] (C) -- (A) -- (P) -- cycle;
+
+  %% Vertex labels
+  \node[above, font=\bfseries\large, text=primary] at (C) {C};
+  \node[below left,  font=\bfseries\large, text=success] at (A) {A};
+  \node[below right, font=\bfseries\large, text=warning] at (P) {P};
+  \node[above, font=\small, text=primary]   at ($(C)+(0,0.2)$)  {Consistency};
+  \node[below, font=\small, text=success]   at ($(A)+(0,-0.2)$) {Availability};
+  \node[below, font=\small, text=warning]   at ($(P)+(0,-0.2)$) {Part. Tolerance};
+
+  %% CP midpoint → MySQL
+  \coordinate (CP) at ($(C)!0.45!(P)$);
+  \fill[success!80] (CP) circle (5pt);
+  \node[right, font=\small\bfseries, text=success!80] at ($(CP)+(0.1,0)$) {MySQL (CP)};
+
+  %% AP midpoint → Redis
+  \coordinate (AP) at ($(A)!0.45!(P)$);
+  \fill[accent!80] (AP) circle (5pt);
+  \node[below, font=\small\bfseries, text=accent!80] at ($(AP)+(0,-0.1)$) {Redis (AP)};
+
+  %% System overall → slightly toward AP
+  \coordinate (SYS) at (-1.0, 0.9);
+  \fill[primary] (SYS) circle (6pt);
+  \node[left, font=\small\bfseries, text=primary] at ($(SYS)+(-0.1,0)$) {System};
+
+  %% Kafka note
+  \node[font=\tiny\itshape, text=warning, align=center] at (0,-0.7)
+    {Kafka: CP (native) → AP via graceful degradation};
+\end{tikzpicture}
+\caption{CAP triangle showing positions of individual components and the
+  overall system (AP-prioritised).}
+\label{fig:cap}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Component CAP characteristics summary}
+\label{tab:cap}
+\begin{tabularx}{\textwidth}{@{}llXl@{}}
+\toprule
+\textbf{Component} & \textbf{CAP} & \textbf{Partition Behaviour} & \textbf{Strategy} \\
+\midrule
+MySQL  & CP & Fail → HTTP 500, no data access & Fail-fast \\
+Redis  & AP & Fail → DB fallback, degraded perf. & Cache-Aside fallback \\
+Kafka  & CP$\to$AP & Fail → event loss, stock op. succeeds & Fire-and-forget + log \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{System-Level Decision: AP with CP Fallback}
+
+The system is designed to maximise availability:
+\begin{itemize}[noitemsep]
+  \item Stock CRUD operations continue even if Redis \emph{and} Kafka are down.
+  \item Only a MySQL partition causes a hard failure (HTTP 500), because
+        the database is the sole source of truth and there is no safe
+        fallback for persistence.
+  \item Eventual consistency is preferred over blocking writes.
+\end{itemize}
+
+%% ============================================================
+\section{Observability Stack}
+\label{sec:observability}
+%% ============================================================
+
+\subsection{Prometheus Metrics}
+
+Spring Boot Actuator exposes a \texttt{/actuator/prometheus} endpoint.
+Prometheus scrapes it every 15 seconds.
+Beyond JVM and HTTP auto-instrumentation, the system defines 8 custom
+Micrometer metrics (Table~\ref{tab:metrics}).
+
+\begin{table}[H]
+\centering
+\caption{Custom Micrometer metrics}
+\label{tab:metrics}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Metric Name}              & \textbf{Type}   & \textbf{Description} \\
+\midrule
+\texttt{cache.hit.miss.total}     & Counter  & Cache hits/misses tagged by result \\
+\texttt{cache.operation.duration} & Timer    & Redis op latency (get/set/delete) \\
+\texttt{redis.reconnect.total}    & Counter  & Lettuce reconnection attempts \\
+\texttt{kafka.producer.send.total}& Counter  & Events sent, tagged success/failure \\
+\texttt{stock.create.duration}    & Timer    & End-to-end stock creation latency \\
+\texttt{stock.update.duration}    & Timer    & End-to-end stock update latency \\
+\texttt{outbox.events.total}      & Counter  & Outbox events tagged sent/failed/retried \\
+\texttt{outbox.pending.gauge}     & Gauge    & Current pending Outbox event count \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Grafana Dashboards}
+
+Two dashboards are provisioned automatically via Grafana's provisioning
+API:
+
+\begin{enumerate}
+  \item \textbf{Stock Metrics Dashboard} — Six stat panels (App health,
+        cache hit rate, Kafka success rate, throughput, Redis reconnects,
+        Kafka failures) plus time-series graphs for HTTP rate, cache
+        latency, cache hit/miss stacked area, Kafka throughput, and
+        JVM heap.
+
+  \item \textbf{IoT Sensor Metrics Dashboard} — Temperature time series,
+        alert rate, partition health, and consumer lag gauges.
+\end{enumerate}
+
+Alert thresholds:
+\begin{itemize}[noitemsep]
+  \item Cache hit rate $< 50\%$ → \textcolor{warning}{\textbf{Warning}}
+  \item Kafka success rate $< 80\%$ → \textcolor{danger}{\textbf{Critical}}
+  \item Redis reconnects $> 0$ → \textcolor{danger}{\textbf{Critical}}
+\end{itemize}
+
+%% ============================================================
+\section{IoT Sensor Pipeline}
+\label{sec:iot}
+%% ============================================================
+
+Figure~\ref{fig:iot} illustrates the end-to-end path of IoT sensor data.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.3cm and 0.2cm, scale=0.84, every node/.style={scale=0.84}]
+
+  \node[svcbox=warning, minimum width=3cm] (sim)
+    at (0,0) {Python IoT\\Simulator};
+  \node[svcbox=warning, minimum width=3cm] (kf)
+    at (4,0) {Kafka\\warehouse-metrics};
+  \node[svcbox=primary, minimum width=3cm] (wml)
+    at (8,0)  {WarehouseMetrics\\Listener};
+  \node[svcbox=accent,  minimum width=3cm] (rd)
+    at (8,-2) {Redis\\sensor:\{id\}\\alert:\{id\}};
+  \node[svcbox=secondary,minimum width=3cm] (ctl)
+    at (4,-2) {SensorController\\SSE stream};
+  \node[svcbox=neutral, minimum width=3cm] (fe)
+    at (0,-2) {React\\Dashboard};
+
+  \draw[arrow] (sim) -- node[above,font=\tiny]{JSON 1 s} (kf);
+  \draw[arrow] (kf)  -- node[above,font=\tiny]{consume} (wml);
+  \draw[arrow] (wml) -- node[right,font=\tiny]{SET / LPUSH} (rd);
+  \draw[arrow] (rd)  -- node[above,font=\tiny]{LRANGE alerts} (ctl);
+  \draw[arrow] (ctl) -- node[above,font=\tiny]{SSE events} (fe);
+
+  \node[msgbox, below=0.5cm of sim, align=left] {
+    \{"cihazId":"depo-sensor-1",\\
+    \,"sicaklik":24.5,\\
+    \,"zaman":"2026-04-09T12:03:10Z"\}
+  };
+\end{tikzpicture}
+\caption{IoT sensor data pipeline from Python simulator to React dashboard
+  via Kafka, Redis, and Server-Sent Events.}
+\label{fig:iot}
+\end{figure}
+
+\subsubsection{Python Sensor Simulator}
+
+The simulator (\texttt{sensor\_simulator.py}) runs in its own Docker
+container and publishes a temperature reading every \textbf{1 second}
+to the \texttt{warehouse-metrics} Kafka topic.
+
+\begin{lstlisting}[style=javaStyle, language=Python,
+  caption={Core simulation loop (Python)}]
+def generate_sensor_data():
+    temperature = round(random.uniform(15.0, 30.0), 1)
+    return {
+        "cihazId":   DEVICE_ID,          # "depo-sensor-1"
+        "sicaklik":  temperature,        # Celsius
+        "zaman":     datetime.utcnow()   # ISO-8601 + Z
+    }
+
+while True:
+    send_to_kafka(producer, generate_sensor_data())
+    time.sleep(1)
+\end{lstlisting}
+
+\subsubsection{Alert Generation}
+
+The \texttt{WarehouseMetricsListener} Kafka consumer triggers an alert
+whenever the temperature exceeds \textbf{30 °C}:
+
+\begin{lstlisting}[style=javaStyle,
+  caption={Temperature alert logic in Java}]
+if (dto.getSicaklik() > 30.0) {
+    redisTemplate.opsForList()
+        .leftPush("alert:" + dto.getCihazId(),
+                  "HIGH TEMP: " + dto.getSicaklik() + " C at " + dto.getZaman());
+}
+\end{lstlisting}
+
+Alerts are stored as a Redis List and exposed via the SensorController
+REST endpoint, which the React dashboard polls.
+
+%% ============================================================
+\section{Resilience Patterns}
+\label{sec:resilience}
+%% ============================================================
+
+\subsection{Transactional Outbox Pattern}
+\label{sec:outbox}
+
+The Outbox Pattern (Figure~\ref{fig:outbox}) guarantees \textbf{at-least-once}
+delivery of stock domain events to Kafka, even during broker outages.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm, scale=0.84, every node/.style={scale=0.84}]
+
+  \node[svcbox=primary, minimum width=3cm]  (ss) at (0,0)    {StockService};
+  \node[svcbox=success, minimum width=2.4cm](db) at (3.5,0)  {MySQL TX};
+  \node[svcbox=accent,  minimum width=2.8cm](ob) at (3.5,-1.8){outbox\_events\\PENDING};
+  \node[svcbox=primary, minimum width=3cm]  (sc) at (0,-3.6) {OutboxScheduler\\(every 5 s)};
+  \node[svcbox=warning, minimum width=2.4cm](kf) at (3.5,-3.6){Kafka\\stock-events};
+  \node[svcbox=neutral, minimum width=2.8cm](st) at (3.5,-5.2){status = SENT\\or FAILED (>5)};
+
+  \draw[arrow] (ss) -- node[above,font=\tiny]{save(stock)} (db);
+  \draw[arrow] (db) -- node[right,font=\tiny]{\textregistered same TX} (ob);
+  \draw[arrow] (sc) -- node[above,font=\tiny]{SELECT PENDING LIMIT 50} (ob |- sc) -- (ob);
+  \draw[arrow] (sc) -- node[above,font=\tiny]{sendSync()} (kf);
+  \draw[arrow] (kf) -- node[right,font=\tiny]{ACK} (st);
+  \draw[arrow, dashed, draw=danger!70] (kf.south) -- node[right,font=\tiny\color{danger}]{retryCount++} (st.north);
+\end{tikzpicture}
+\caption{Transactional Outbox Pattern: stock and event writes share one
+  database transaction; a background scheduler retries delivery up to
+  five times before marking an event as FAILED.}
+\label{fig:outbox}
+\end{figure}
+
+\subsection{Rate Limiting — Token Bucket}
+
+A Bucket4j-based token-bucket rate limiter enforces a global limit of
+\textbf{50 requests/second}, configured via application properties:
+
+\begin{lstlisting}[style=yamlStyle, caption={Rate limiter configuration}]
+rate-limit.global:
+  capacity:            50   # Max bucket size
+  refill-tokens:       50   # Tokens restored per interval
+  refill-duration-ms: 1000  # Refill interval (1 s)
+\end{lstlisting}
+
+Excess requests receive HTTP \texttt{429 Too Many Requests}.
+
+%% ============================================================
+\section{Testing \& Benchmarking}
+\label{sec:testing}
+%% ============================================================
+
+\subsection{Fault-Injection Experiments}
+
+Three partition scenarios were systematically tested:
+
+\paragraph{Redis Partition.}
+Injecting a \texttt{timeout} toxic with \texttt{timeout=0} on the
+Redis proxy causes all cache operations to time out after 5 000 ms.
+The system falls back to MySQL transparently. Cache-miss metrics spike
+in Grafana; average GET latency increases from 10 ms to~5 050 ms.
+Upon removing the toxic, the cache warms organically as new reads
+populate entries, and latency normalises within seconds.
+
+\paragraph{Kafka Partition.}
+With a Kafka timeout toxic active, the Outbox Scheduler accumulates
+\texttt{PENDING} events in MySQL while retrying every 5 seconds.
+\texttt{stock.create} and \texttt{stock.update} operations continue to
+return HTTP 201/200 — clients are unaffected.
+Once the toxic is removed, the Scheduler delivers all backlogged events;
+zero event loss is observed.
+
+\paragraph{MySQL Partition.}
+A MySQL timeout toxic causes all JDBC calls to throw
+\texttt{SQLException}.
+The \texttt{@Transactional} annotation triggers a rollback; clients
+receive HTTP 500.
+This confirms the CP behaviour of MySQL: \emph{no availability, perfect
+consistency}. Recovery is instantaneous upon toxic removal.
+
+\subsection{Throughput Benchmarks}
+
+Load tests were performed by sending 10 000 Kafka messages through the
+load-test endpoint (Table~\ref{tab:bench}).
+
+\begin{table}[H]
+\centering
+\caption{Kafka throughput under varying network conditions}
+\label{tab:bench}
+\begin{tabularx}{\textwidth}{@{}lrrrl@{}}
+\toprule
+\textbf{Scenario}          & \textbf{Throughput} & \textbf{Duration} & \textbf{Success Rate} & \textbf{Notes} \\
+\midrule
+Normal (no toxic)          & 200 ops/s & 2–3 s   & 100\% & Baseline \\
+Kafka 500 ms latency       & 125 ops/s & ~8 s    & 100\% & 62.5\% of baseline \\
+Kafka 2000 ms latency      &  25 ops/s & ~40 s   & 100\% & 12.5\% of baseline \\
+Kafka complete partition    &   0 ops/s & N/A     &   0\% & Events queued in Outbox \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The linear relationship $\text{throughput} \propto 1/\text{latency}$
+holds under latency injection, confirming the synchronous send semantics
+of the Outbox Scheduler.
+
+\subsection{Latency Measurements}
+
+\begin{table}[H]
+\centering
+\caption{HTTP endpoint response times under normal and partition conditions}
+\label{tab:latency}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+\textbf{Endpoint}            & \textbf{Cache HIT} & \textbf{Cache MISS} & \textbf{Redis Down} \\
+\midrule
+GET /api/stocks/\{id\}       & $<$10 ms  & $\sim$50 ms  & $\sim$5050 ms \\
+POST /api/stocks             & $\sim$80 ms & $\sim$80 ms & $\sim$85 ms \\
+GET /api/sensors/stream/...  & SSE (persistent) & — & — \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Resource Utilisation}
+
+JVM heap usage stabilises at approximately \textbf{40 MB} (2\% of the
+2 048 MB maximum) at 200 ops/s, demonstrating the efficiency of the
+Lettuce async client and non-blocking Kafka producer.
+Connection pools are sized conservatively: 10 MySQL connections
+(HikariCP), 8 Redis connections (Lettuce), 5 in-flight Kafka producer
+requests.
+
+%% ============================================================
+\section{Key Design Decisions \& Trade-offs}
+\label{sec:design}
+%% ============================================================
+
+\subsection{Kafka \texttt{acks=all} with Graceful Degradation}
+
+Using \texttt{acks=all} maximises durability when Kafka is healthy —
+the producer waits for the leader and all in-sync replicas to
+acknowledge.
+When Kafka becomes unavailable, the exception handler increments the
+failure counter and logs the error \emph{without rethrowing}, preserving
+stock-operation availability.
+This effectively uses a CP technology in an AP manner.
+
+\subsection{Hybrid Redis Strategy: Write-Through + Cache-Aside}
+
+On creation and update, the cache is synchronously populated
+immediately after the database write (\emph{write-through}), ensuring
+subsequent reads are cache-hits.
+During a Redis partition, the \emph{cache-aside} branch skips the
+cache-write to avoid storing potentially stale entries whose TTL would
+not begin expiring until recovered.
+
+\subsection{KRaft Mode — No ZooKeeper}
+
+Kafka 4.1.1 uses the built-in Raft consensus mechanism (\emph{KRaft})
+instead of an external ZooKeeper ensemble.
+This simplifies the compose file by eliminating a separate ZooKeeper
+container, reduces startup time, and reflects the production trajectory
+of the Kafka project.
+
+\subsection{Single Kafka Broker}
+
+A single broker is used for development and experiment simplicity.
+Toxiproxy compensates for the absence of multi-broker fault tolerance
+by providing controllable network partitions.
+A production deployment would use a 3-broker cluster with replication
+factor~3.
+
+\subsection{React + Native Canvas Charting}
+
+Third-party charting libraries (Chart.js, Recharts) were deliberately
+avoided.
+The temperature time-series chart is rendered on an HTML5 Canvas,
+eliminating dependencies, reducing bundle size, and maintaining full
+control over the rendering pipeline required for 1 Hz SSE update rates.
+
+%% ============================================================
+\section{CI/CD Pipeline}
+\label{sec:cicd}
+%% ============================================================
+
+A GitHub Actions workflow (\texttt{.github/workflows/ci.yml}) runs on
+every push and pull request to \texttt{master}:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Gradle Build} — compiles Java sources and runs JUnit tests
+        with Spring Kafka Test embedded broker.
+  \item \textbf{Docker Build} — builds the Spring Boot image to validate
+        the \texttt{Dockerfile}.
+  \item \textbf{Integration Smoke Test} — starts the full Docker Compose
+        stack and sends a health-check HTTP request to verify the application
+        starts correctly.
+\end{enumerate}
+
+%% ============================================================
+\section{Future Work}
+\label{sec:future}
+%% ============================================================
+
+\begin{enumerate}[leftmargin=1.8cm, label=\textbf{F\arabic*.}]
+  \item \textbf{Redis Sentinel} — automatic failover from master to
+        standby; eliminate the manual promotion step.
+  \item \textbf{Multi-Broker Kafka} — 3-broker cluster with replication
+        factor 3 for genuine Kafka-level fault tolerance.
+  \item \textbf{Circuit Breakers (Resilience4j)} — prevent cascading
+        failures when Redis or MySQL degrade slowly rather than failing
+        instantly.
+  \item \textbf{Dead-Letter Queue} — persist permanently-failed Outbox
+        events for manual replay and auditing.
+  \item \textbf{Distributed Tracing (Zipkin/Jaeger)} — correlate spans
+        across HTTP, Kafka, and Redis to trace latency sources end-to-end.
+  \item \textbf{Reduced Redis Timeout} — lower the Lettuce connection
+        timeout from 5 s to 2 s to shorten the degraded-mode response
+        window.
+  \item \textbf{Multi-Tenant IoT Sensors} — support multiple \texttt{deviceId}
+        streams simultaneously; partition \texttt{warehouse-metrics} by
+        device.
+\end{enumerate}
+
+%% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%% ============================================================
+
+This paper has documented a pragmatic, \textbf{AP-focused} distributed
+system that demonstrates CAP Theorem trade-offs through live fault
+injection.
+
+The principal contributions are:
+
+\begin{itemize}
+  \item A ten-container Docker Compose architecture covering the full
+        technology stack of a modern microservice system.
+  \item Systematic Toxiproxy experiments that make CAP trade-offs
+        \emph{measurable} rather than theoretical.
+  \item A \textbf{Transactional Outbox Pattern} that upgrades stock-event
+        delivery from \emph{at-most-once} to \emph{at-least-once} without
+        sacrificing availability.
+  \item An end-to-end IoT pipeline (Python → Kafka → Redis → SSE → React)
+        that demonstrates heterogeneous producer/consumer integration.
+  \item 30+ Prometheus metrics and two Grafana dashboards that surface
+        partition effects in sub-15-second resolution.
+\end{itemize}
+
+The system remains \textbf{fully functional} under Redis or Kafka
+partitions — the two failure modes most relevant to an AP-prioritised
+architecture — while correctly failing fast under MySQL partitions where
+no safe consistency-preserving fallback exists.
+
+%% ============================================================
+%%  References
+%% ============================================================
+\newpage
+\begin{thebibliography}{9}
+
+\bibitem{brewer2000towards}
+E.~A. Brewer,
+\newblock ``Towards robust distributed systems,''
+\newblock in \emph{Proc. 19th Annual ACM Symposium on Principles of Distributed
+  Computing (PODC)}, Portland, OR, 2000.
+
+\bibitem{gilbert2002brewer}
+S.~Gilbert and N.~Lynch,
+\newblock ``Brewer's conjecture and the feasibility of consistent, available,
+  partition-tolerant web services,''
+\newblock \emph{ACM SIGACT News}, vol.~33, no.~2, pp.~51--59, 2002.
+
+\bibitem{kleppmann2017ddia}
+M.~Kleppmann,
+\newblock \emph{Designing Data-Intensive Applications}.
+\newblock O'Reilly Media, 2017.
+
+\bibitem{springsource}
+VMware,
+\newblock \emph{Spring Boot Reference Documentation 3.x},
+\newblock \url{https://docs.spring.io/spring-boot/}, 2024.
+
+\bibitem{kafka}
+Apache Software Foundation,
+\newblock \emph{Apache Kafka Documentation 4.1},
+\newblock \url{https://kafka.apache.org/documentation/}, 2024.
+
+\bibitem{toxiproxy}
+Shopify Inc.,
+\newblock \emph{Toxiproxy — A TCP proxy to simulate network and system
+  conditions},
+\newblock \url{https://github.com/Shopify/toxiproxy}, 2023.
+
+\bibitem{richardson2018microservices}
+C.~Richardson,
+\newblock \emph{Microservices Patterns}.
+\newblock Manning Publications, 2018.
+
+\end{thebibliography}
+
+%% ============================================================
+\appendix
+\section{Technology Version Matrix}
+\label{app:versions}
+%% ============================================================
+
+\begin{table}[H]
+\centering
+\caption{Technology versions used in the project}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Technology} & \textbf{Version} \\
+\midrule
+Java                & 17 \\
+Spring Boot         & 3.5.9 \\
+Gradle              & 8.5 \\
+Kafka               & 4.1.1 (KRaft) \\
+Redis               & 7-alpine \\
+MySQL               & 8.0 \\
+Prometheus          & latest \\
+Grafana             & latest \\
+Toxiproxy           & latest \\
+React               & 18 \\
+Vite                & 6.x \\
+Python              & 3.11 \\
+Bucket4j            & 8.10.1 \\
+Nginx               & alpine \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Port Reference}
+\label{app:ports}
+
+\begin{table}[H]
+\centering
+\caption{Service port mapping}
+\begin{tabular}{@{}lrrp{5cm}@{}}
+\toprule
+\textbf{Service}     & \textbf{Internal} & \textbf{External} & \textbf{Purpose} \\
+\midrule
+MySQL (direct)       & 3306 & —    & Internal only \\
+MySQL (proxy)        & —    & 3307 & Toxiproxy testing \\
+Redis Master (direct)& 6379 & 6379 & Cache R/W \\
+Redis Master (proxy) & —    & 26379& Toxiproxy testing \\
+Redis Replica        & 6379 & 6380 & Read-only standby \\
+Kafka (internal)     & 9092 & 9092 & Event bus \\
+Kafka (proxy)        & —    & 29093& Toxiproxy testing \\
+Spring Boot API      & 8080 & 8080 & REST + SSE \\
+React Frontend       &   80 & 3000 & Web UI \\
+Grafana              & 3000 & 3001 & Dashboards \\
+Prometheus           & 9090 & 9090 & Metrics \\
+Toxiproxy API        & 8474 & 8666 & Toxic management \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

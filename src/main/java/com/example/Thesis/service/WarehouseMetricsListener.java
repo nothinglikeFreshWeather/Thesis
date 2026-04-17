@@ -1,6 +1,7 @@
 package com.example.Thesis.service;
 
 import com.example.Thesis.dto.SensorDataDto;
+ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class WarehouseMetricsListener {
     
     private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper;
     private final Counter sensorReceivedCounter;
     private final Counter sensorAlertCounter;
     private final Counter sensorErrorCounter;
@@ -27,11 +29,13 @@ public class WarehouseMetricsListener {
     
     public WarehouseMetricsListener(
             RedisTemplate<String, String> redisTemplate,
+            ObjectMapper objectMapper,
             Counter warehouseSensorReceivedCounter,
             Counter warehouseSensorAlertCounter,
             Counter warehouseSensorErrorCounter,
             MeterRegistry meterRegistry) {
         this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
         this.sensorReceivedCounter = warehouseSensorReceivedCounter;
         this.sensorAlertCounter = warehouseSensorAlertCounter;
         this.sensorErrorCounter = warehouseSensorErrorCounter;
@@ -80,23 +84,16 @@ public class WarehouseMetricsListener {
     }
     
     /**
-     * Stores sensor data in Redis for real-time access
+     * Stores sensor data in Redis as JSON for type-safe retrieval.
      */
     private void storeSensorDataInRedis(SensorDataDto sensorData) {
         try {
             String redisKey = REDIS_KEY_PREFIX + sensorData.getCihazId();
-            String sensorValue = String.format(
-                "Temperature=%.1f°C|Time=%s|Updated=%d",
-                sensorData.getSicaklik(),
-                sensorData.getZaman(),
-                System.currentTimeMillis()
-            );
-            
-            // Set with TTL of 5 minutes (300 seconds)
-            redisTemplate.opsForValue().set(redisKey, sensorValue);
+            // Store as JSON — no more fragile pipe-delimited strings
+            String json = objectMapper.writeValueAsString(sensorData);
+            redisTemplate.opsForValue().set(redisKey, json);
             redisTemplate.expire(redisKey, java.time.Duration.ofMinutes(5));
-            
-            log.debug("Sensor data stored in Redis: {} = {}", redisKey, sensorValue);
+            log.debug("Sensor data stored in Redis as JSON: key={}", redisKey);
         } catch (Exception e) {
             log.error("Failed to store sensor data in Redis: {}", e.getMessage(), e);
         }
