@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.example.Thesis.dto.SensorDataDto;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 public class SensorController {
     
     private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper;
     private static final String REDIS_KEY_PREFIX = "sensor:";
     private static final String ALERT_KEY_PREFIX = "alert:";
     
@@ -186,42 +190,22 @@ public class SensorController {
     }
     
     /**
-     * Parse sensor value from Redis storage format into structured fields.
-     * Format: "Temperature=24.5°C|Time=2026-04-05T15:43:00Z|Updated=1712338980000"
+     * Parses sensor value from Redis JSON into structured fields.
+     * Redis now stores: {"cihazId":"depo-sensor-1","sicaklik":24.5,"zaman":"..."}
      */
-    private Map<String, Object> parseRedisSensorValue(String sensorValue) {
+    private Map<String, Object> parseRedisSensorValue(String json) {
         Map<String, Object> result = new HashMap<>();
-        result.put("rawValue", sensorValue);
-        
+        result.put("rawValue", json);
         try {
-            String[] parts = sensorValue.split("\\|");
-            for (String part : parts) {
-                String[] kv = part.split("=", 2);
-                if (kv.length == 2) {
-                    String key = kv[0].trim();
-                    String value = kv[1].trim();
-                    
-                    switch (key) {
-                        case "Temperature":
-                            // Remove °C suffix and parse
-                            String tempStr = value.replace("°C", "").trim();
-                            result.put("temperature", Double.parseDouble(tempStr));
-                            result.put("temperatureUnit", "°C");
-                            break;
-                        case "Time":
-                            result.put("sensorTime", value);
-                            break;
-                        case "Updated":
-                            result.put("updatedAt", Long.parseLong(value));
-                            break;
-                    }
-                }
-            }
+            SensorDataDto dto = objectMapper.readValue(json, SensorDataDto.class);
+            result.put("temperature", dto.getSicaklik());
+            result.put("temperatureUnit", "°C");
+            result.put("sensorTime", dto.getZaman());
+            result.put("deviceId", dto.getCihazId());
         } catch (Exception e) {
-            log.warn("Failed to parse sensor value '{}': {}", sensorValue, e.getMessage());
+            log.warn("Failed to parse sensor JSON from Redis '{}': {}", json, e.getMessage());
             result.put("temperature", null);
         }
-        
         return result;
     }
 }
