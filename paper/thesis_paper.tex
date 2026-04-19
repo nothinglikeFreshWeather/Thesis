@@ -1,6 +1,6 @@
 %% ============================================================
 %%  Stock Tracking System — Technical Paper
-%%  Author  : Alper
+%%  Author  : Alperen
 %%  Date    : April 2026
 %%  Engine  : pdfLaTeX
 %% ============================================================
@@ -231,26 +231,29 @@
 %% ---- Abstract ----
 \begin{abstract}
 \noindent
-This paper presents the design, implementation, and evaluation of a
-\textbf{distributed stock-tracking system} built to demonstrate the
-\emph{CAP Theorem} in practice.
-The system integrates a \tech{Spring Boot} backend, a \tech{Kafka}
-event-streaming bus, a \tech{Redis} cache layer, a \tech{MySQL}
-relational database, a \tech{Python} IoT sensor simulator, and a
-\tech{React} single-page application — all orchestrated with
-\tech{Docker Compose} across ten containerised services.
-Network partitions are injected deterministically through
-\tech{Toxiproxy}, allowing systematic observation of consistency/avail\-ability
-trade-offs.
-A \tech{Transactional Outbox Pattern} guarantees at-least-once event
-delivery to Kafka during transient broker outages.
-End-to-end observability is achieved via \tech{Prometheus} metrics and
-dual \tech{Grafana} dashboards for stock operations and IoT sensor data.
-Benchmarks demonstrate a stable throughput of 200 ops/s under normal
-conditions, degrading predictably under injected latency, and maintaining
-\emph{full functional availability} even when the cache or message broker
-are artificially partitioned.
+This paper presents the design, implementation, evaluation, and iterative
+refactoring of a \textbf{distributed stock-tracking system} built to demonstrate
+the \emph{CAP Theorem} in practice.
+The system integrates a \tech{Spring Boot 3.x} backend, a \tech{Kafka 4.1}
+event-streaming bus, a \tech{Redis 7} cache layer, a \tech{MySQL 8} relational
+database, a \tech{Python} IoT sensor simulator, and a \tech{React 18}
+single-page application --- all orchestrated with \tech{Docker Compose} across
+ten containerised services.
+Network partitions are injected deterministically through \tech{Toxiproxy},
+enabling systematic observation of consistency/availability trade-offs.
+A \textbf{Transactional Outbox Pattern} --- correctly wired within a shared
+database transaction --- guarantees at-least-once event delivery to Kafka
+during broker outages.
+The codebase was subsequently restructured around three vertical \textbf{domain
+slices} (\texttt{stock}, \texttt{sensor}, \texttt{shared}), improving
+maintainability and separation of concerns.
+End-to-end observability is provided by \tech{Prometheus} metrics and dual
+\tech{Grafana} dashboards for stock operations and real-time IoT sensor data.
+Benchmarks demonstrate a stable throughput of 200\,ops/s under normal conditions,
+degrading predictably under injected latency, and maintaining \emph{full
+functional availability} even when the cache or message broker are partitioned.
 \end{abstract}
+
 
 \tableofcontents
 \newpage
@@ -298,6 +301,8 @@ Section~\ref{sec:dataflow} traces the principal data flows.
 Section~\ref{sec:cap} analyses CAP positions and partition strategies.
 Section~\ref{sec:observability} covers the monitoring stack.
 Section~\ref{sec:iot} details the IoT pipeline.
+Section~\ref{sec:refactor} documents the refactoring phase and quality
+improvements made after the initial integration.
 Section~\ref{sec:testing} presents fault-injection and load-testing results.
 Section~\ref{sec:design} discusses key design decisions and trade-offs.
 Section~\ref{sec:conclusion} concludes with future work.
@@ -407,9 +412,11 @@ network named \texttt{stock-network} (Table~\ref{tab:containers}).
 \subsection{Backend: Spring Boot Application}
 
 The backend is built on \tech{Spring Boot 3.x} (Java 17, Gradle 8.5)
-and is structured into four horizontal layers: \emph{Controller},
-\emph{Service}, \emph{Repository}, and \emph{Configuration}
+and is organised into three \textbf{vertical domain slices} each containing
+its own controller, service, repository, and DTO layers
 (Figure~\ref{fig:backend}).
+Shared infrastructure (Kafka, Redis, rate limiting, metrics) resides in a
+dedicated \texttt{shared} package.
 
 \begin{figure}[H]
 \centering
@@ -597,8 +604,8 @@ Two topics carry the system's event traffic (Table~\ref{tab:topics}).
 \toprule
 \textbf{Topic}         & \textbf{Partitions} & \textbf{Producer} & \textbf{Consumer} \\
 \midrule
-\texttt{stock-events}      & 3 & Outbox Scheduler (Java, sync) & — (external) \\
-\texttt{warehouse-metrics} & 3 & IoT Simulator (Python, JSON)  & WarehouseMetricsListener \\
+\texttt{stock-events}      & 3 & Outbox Scheduler (Java, sync) & --- (external) \\
+\texttt{warehouse-metrics} & 3 & IoT Simulator (Python, JSON)  & SensorDataListener \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -936,20 +943,26 @@ while True:
 
 \subsubsection{Alert Generation}
 
-The \texttt{WarehouseMetricsListener} Kafka consumer triggers an alert
-whenever the temperature exceeds \textbf{30 °C}:
+The \texttt{SensorDataListener} Kafka consumer triggers an alert
+whenever the temperature exceeds \textbf{30\,\textdegree{}C}.
+Note that following the refactoring (Section~\ref{sec:refactor}), the
+\texttt{SensorDataDto} uses English field names internally; Turkish names
+are only used as JSON wire keys via \texttt{@JsonProperty}:
 
 \begin{lstlisting}[style=javaStyle,
-  caption={Temperature alert logic in Java}]
-if (dto.getSicaklik() > 30.0) {
+  caption={Temperature alert logic using English field names}]
+// SensorDataDto: wire name "sicaklik" -> Java field temperature
+if (data.getTemperature() != null && data.getTemperature() > 30.0) {
+    String msg = String.format(
+        "ALERT: Temperature %.1f C exceeds threshold at %s",
+        data.getTemperature(), Instant.now());
     redisTemplate.opsForList()
-        .leftPush("alert:" + dto.getCihazId(),
-                  "HIGH TEMP: " + dto.getSicaklik() + " C at " + dto.getZaman());
+        .leftPush("alert:" + data.getDeviceId(), msg);
 }
 \end{lstlisting}
 
-Alerts are stored as a Redis List and exposed via the SensorController
-REST endpoint, which the React dashboard polls.
+Alerts are stored as a Redis List (TTL: 1 hour) and exposed via the
+\texttt{SensorController} REST endpoints, which the React dashboard polls.
 
 %% ============================================================
 \section{Resilience Patterns}
@@ -962,6 +975,23 @@ REST endpoint, which the React dashboard polls.
 The Outbox Pattern (Figure~\ref{fig:outbox}) guarantees \textbf{at-least-once}
 delivery of stock domain events to Kafka, even during broker outages.
 
+\textbf{Correct integration:} Both the stock record and the outbox entry are
+written inside the same \texttt{@Transactional} method. If either write fails,
+the entire transaction rolls back, ensuring no orphaned stock record can exist
+without a corresponding Kafka event:
+
+\begin{lstlisting}[style=javaStyle,
+  caption={Atomic stock + outbox write in StockService}]
+@Transactional
+public StockResponseDto createStock(StockRequestDto dto) {
+    Stock saved = stockRepository.save(stock);       // (1) persist stock
+    cacheService.set("stock:" + saved.getId(), ...); // (2) warm cache
+    saveToOutbox(StockEventDto.create(CREATED, ...)); // (3) queue event
+    return toResponseDto(saved);                      // (4) return 201
+    // Any exception -> @Transactional rolls back (1) and (3) together
+}
+\end{lstlisting}
+
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[node distance=0.4cm, scale=0.84, every node/.style={scale=0.84}]
@@ -971,18 +1001,19 @@ delivery of stock domain events to Kafka, even during broker outages.
   \node[svcbox=accent,  minimum width=2.8cm](ob) at (3.5,-1.8){outbox\_events\\PENDING};
   \node[svcbox=primary, minimum width=3cm]  (sc) at (0,-3.6) {OutboxScheduler\\(every 5 s)};
   \node[svcbox=warning, minimum width=2.4cm](kf) at (3.5,-3.6){Kafka\\stock-events};
-  \node[svcbox=neutral, minimum width=2.8cm](st) at (3.5,-5.2){status = SENT\\or FAILED (>5)};
+  \node[svcbox=neutral, minimum width=2.8cm](st) at (3.5,-5.2){status = SENT\\or FAILED ($>$5)};
 
   \draw[arrow] (ss) -- node[above,font=\tiny]{save(stock)} (db);
   \draw[arrow] (db) -- node[right,font=\tiny]{\textregistered same TX} (ob);
   \draw[arrow] (sc) -- node[above,font=\tiny]{SELECT PENDING LIMIT 50} (ob |- sc) -- (ob);
   \draw[arrow] (sc) -- node[above,font=\tiny]{sendSync()} (kf);
   \draw[arrow] (kf) -- node[right,font=\tiny]{ACK} (st);
-  \draw[arrow, dashed, draw=danger!70] (kf.south) -- node[right,font=\tiny\color{danger}]{retryCount++} (st.north);
+  \draw[arrow, dashed, draw=danger!70] (kf.south) --
+    node[right,font=\tiny\color{danger}]{retryCount++} (st.north);
 \end{tikzpicture}
 \caption{Transactional Outbox Pattern: stock and event writes share one
-  database transaction; a background scheduler retries delivery up to
-  five times before marking an event as FAILED.}
+  database transaction. The background scheduler retries delivery up to
+  five times before marking an event FAILED.}
 \label{fig:outbox}
 \end{figure}
 
@@ -1138,17 +1169,127 @@ control over the rendering pipeline required for 1 Hz SSE update rates.
 %% ============================================================
 
 A GitHub Actions workflow (\texttt{.github/workflows/ci.yml}) runs on
-every push and pull request to \texttt{master}:
+every push and pull request to \texttt{master} and \texttt{main}. The
+pipeline was iteratively improved as new services (frontend, IoT simulator)
+were added.
 
 \begin{enumerate}[noitemsep]
-  \item \textbf{Gradle Build} — compiles Java sources and runs JUnit tests
-        with Spring Kafka Test embedded broker.
-  \item \textbf{Docker Build} — builds the Spring Boot image to validate
-        the \texttt{Dockerfile}.
-  \item \textbf{Integration Smoke Test} — starts the full Docker Compose
-        stack and sends a health-check HTTP request to verify the application
-        starts correctly.
+  \item \textbf{Backend Build \& Test} --- compiles Java 17 sources with
+        Gradle 8.5 and runs JUnit tests. The JAR is uploaded as a build
+        artifact for traceability.
+  \item \textbf{Frontend Build} --- installs Node.js 18, runs
+        \texttt{npm ci \&\& npm run build} inside \texttt{./frontend/} to
+        verify the React SPA compiles without error on every commit.
+  \item \textbf{Docker Buildx Setup} --- activates the Buildx driver
+        (\texttt{docker/setup-buildx-action@v3}) so that GitHub Actions
+        layer caching (\texttt{type=gha}) works correctly. An earlier
+        pipeline version omitted this step, causing the error:
+        \emph{``Cache export is not supported for the docker driver.''}
+  \item \textbf{Multi-Image Docker Push} (on push to \texttt{master}/\texttt{main}
+        only) --- builds and pushes three images to GitHub Container Registry:
+        \begin{itemize}[noitemsep]
+          \item \texttt{thesis-app} --- Spring Boot backend (Dockerfile at root)
+          \item \texttt{thesis-frontend} --- Nginx + React SPA (\texttt{./frontend/})
+          \item \texttt{thesis-iot-simulator} --- Python sensor (\texttt{./iot-simulator/})
+        \end{itemize}
+        Each image is tagged \texttt{latest} and \texttt{sha-\{commit\}},
+        enabling rollback to any prior commit.
 \end{enumerate}
+
+%% ============================================================
+\section{Refactoring \& Quality Improvements}
+\label{sec:refactor}
+%% ============================================================
+
+Following the initial integration of all features, a focused refactoring
+phase addressed three structural weaknesses that were identified through code
+review.
+
+\subsection{Domain-Oriented Package Structure}
+
+The original codebase used a \emph{technical-layer} layout
+(\texttt{controller/}, \texttt{service/}, \texttt{dto/}, \ldots{}) that
+grouped classes by type rather than by business concern.
+This was refactored into a \textbf{domain-slice} structure where all classes
+belonging to the same bounded context live together:
+
+\begin{lstlisting}[style=yamlStyle,
+  caption={Domain-sliced Java package layout (final)}]
+com.example.Thesis
+|-- stock/           # Stock tracking domain
+|   |-- controller/  StockController, LoadTestController
+|   |-- service/     StockService, KafkaProducerService
+|   |-- outbox/      OutboxEvent, OutboxEventStatus, OutboxScheduler
+|   |-- dto/         StockEventDto, StockRequestDto, StockResponseDto
+|   |-- model/       Stock
+|   +-- repository/  StockRepository, OutboxEventRepository
+|
+|-- sensor/          # IoT sensor domain
+|   |-- controller/  SensorController
+|   |-- listener/    SensorDataListener
+|   +-- dto/         SensorDataDto
+|
++-- shared/          # Cross-cutting infrastructure
+    |-- cache/       CacheService (interface), RedisCacheService
+    |-- config/      KafkaProducerConfig, KafkaConsumerConfig,
+    |                RedisConfig, MetricsConfig, CorsConfig, WebMvcConfig
+    +-- ratelimit/   RateLimitingService, RateLimitInterceptor
+\end{lstlisting}
+
+The \texttt{stock} and \texttt{sensor} packages share no direct class
+references, making it straightforward to extract either domain as an
+independent microservice in a future iteration.
+
+\subsection{Outbox Pattern --- Correct Wiring}
+
+An audit of the initial codebase revealed that \texttt{StockService} was
+calling \texttt{kafkaProducerService.sendStockEvent()} directly after each
+database write. This was an async, fire-and-forget invocation: if Kafka was
+unavailable, the exception was swallowed and the event was silently lost.
+The \texttt{outbox\_events} table existed and the \texttt{OutboxScheduler}
+was running, but the table was never written to.
+
+The corrected implementation persists the outbox entry within the same
+\texttt{@Transactional} context as the stock mutation (see
+Section~\ref{sec:outbox}). The direct Kafka call was removed entirely.
+This upgrades the delivery guarantee from \emph{at-most-once} to
+\emph{at-least-once} without any change to the external API contract.
+
+\subsection{Redis Sensor Storage --- Pipe-Delimited to JSON}
+
+The original \texttt{SensorDataListener} (formerly
+\texttt{WarehouseMetricsListener}) serialised sensor readings to Redis using
+a custom pipe-delimited string:
+\texttt{Temperature=24.5\textdegree{}C|Time=2026-04-09T12:00Z|Updated=...}
+
+\texttt{SensorController} then parsed this string with \texttt{split("|")}
+and \texttt{split("=")}, creating an undocumented, fragile data contract.
+A minor renaming of a field in either class would silently break the parsing.
+
+Both classes were updated to use \texttt{ObjectMapper}: the listener writes
+\texttt{SensorDataDto} as a JSON string; the controller deserialises it back.
+This eliminates the coupling and makes the Redis value self-describing.
+
+\subsection{SensorDataDto --- English Field Names}
+
+The original \texttt{SensorDataDto} used Turkish field names
+(\texttt{cihazId}, \texttt{sicaklik}, \texttt{zaman}) throughout the Java
+codebase because the Python simulator publishes JSON with those keys.
+
+The final version decouples the wire format from the domain model using
+\texttt{@JsonProperty} annotations:
+
+\begin{lstlisting}[style=javaStyle,
+  caption={SensorDataDto: wire-format isolation via @JsonProperty}]
+public class SensorDataDto {
+  @JsonProperty("cihazId")  private String deviceId;    // device ID
+  @JsonProperty("sicaklik") private Double temperature; // Celsius
+  @JsonProperty("zaman")    private String timestamp;   // ISO-8601
+}
+\end{lstlisting}
+
+The Python simulator continues to publish Turkish JSON keys unchanged.
+All Java code after the DTO boundary uses English names exclusively.
 
 %% ============================================================
 \section{Future Work}
@@ -1182,7 +1323,8 @@ every push and pull request to \texttt{master}:
 
 This paper has documented a pragmatic, \textbf{AP-focused} distributed
 system that demonstrates CAP Theorem trade-offs through live fault
-injection.
+injection, and an iterative refactoring process that raised the codebase
+to professional quality standards.
 
 The principal contributions are:
 
@@ -1191,18 +1333,22 @@ The principal contributions are:
         technology stack of a modern microservice system.
   \item Systematic Toxiproxy experiments that make CAP trade-offs
         \emph{measurable} rather than theoretical.
-  \item A \textbf{Transactional Outbox Pattern} that upgrades stock-event
-        delivery from \emph{at-most-once} to \emph{at-least-once} without
-        sacrificing availability.
-  \item An end-to-end IoT pipeline (Python → Kafka → Redis → SSE → React)
-        that demonstrates heterogeneous producer/consumer integration.
+  \item A correctly-wired \textbf{Transactional Outbox Pattern} that
+        upgrades stock-event delivery from \emph{at-most-once} to
+        \emph{at-least-once} without sacrificing stock-operation availability.
+  \item An end-to-end IoT pipeline (Python~$\to$ Kafka~$\to$ Redis~$\to$
+        SSE~$\to$ React) demonstrating heterogeneous producer/consumer integration.
   \item 30+ Prometheus metrics and two Grafana dashboards that surface
         partition effects in sub-15-second resolution.
+  \item A \textbf{domain-sliced package refactoring} that replaces the original
+        technical-layer layout with \texttt{stock/}, \texttt{sensor/}, and
+        \texttt{shared/} domain boundaries, improving cohesion, reducing
+        coupling, and enabling future microservice extraction.
 \end{itemize}
 
 The system remains \textbf{fully functional} under Redis or Kafka
-partitions — the two failure modes most relevant to an AP-prioritised
-architecture — while correctly failing fast under MySQL partitions where
+partitions --- the two failure modes most relevant to an AP-prioritised
+architecture --- while correctly failing fast under MySQL partitions where
 no safe consistency-preserving fallback exists.
 
 %% ============================================================
