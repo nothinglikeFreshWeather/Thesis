@@ -1,0 +1,72 @@
+name: 🔥 Chaos Engineering Pipeline
+
+# Bu workflow haftalik otomatik + elle tetiklenebilir sekilde calisir.
+# NOT: Gercek servisler cloud'da deploy edilmediginden bu workflow
+#      sadece dokumantasyon amaclidir. Chaos testlerini lokalde
+#      calistirmak icin: .\chaos\run_chaos.ps1
+#
+# Ileride self-hosted runner veya cloud deploy eklenirse
+#  bu workflow dogrudan calisabilir hale gelir.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Spring Boot base URL"
+        required: false
+        default: "http://localhost:8080"
+  schedule:
+    - cron: "0 2 * * 1"   # Her Pazartesi 02:00 UTC
+
+jobs:
+  chaos-tests:
+    name: 🔥 Chaos Test Suite
+    runs-on: ubuntu-latest   # self-hosted runner eklenirse degistir
+    # Sadece workflow_dispatch veya schedule ile calisir (push'ta degil)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4.2.2
+
+      # ── Servisler ayaga kaldirilir ────────────────────────────────
+      - name: 🐳 Docker Compose Up
+        run: docker compose up -d
+
+      - name: ⏳ Spring Boot hazir olana kadar bekle
+        run: |
+          echo "Uygulama baslayana kadar bekleniyor..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/actuator/health || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✔ Uygulama hazir (deneme $i)"
+              exit 0
+            fi
+            echo "  Deneme $i/30 — HTTP $STATUS, 10s bekleniyor..."
+            sleep 10
+          done
+          echo "✘ Uygulama baslatilamadi"
+          exit 1
+
+      # ── Chaos testlerini calistir ─────────────────────────────────
+      - name: 🔥 Chaos Testleri Calistir
+        id: chaos
+        shell: pwsh
+        run: |
+          .\chaos\run_chaos.ps1 `
+            -AppUrl       "http://localhost:8080" `
+            -ToxiproxyUrl "http://localhost:8666" `
+            -PrometheusUrl "http://localhost:9090"
+
+      # ── Raporlari kaydet ──────────────────────────────────────────
+      - name: 📊 Chaos Raporunu Yukle
+        uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: chaos-report-${{ github.run_number }}
+          path: chaos/results/
+
+      # ── Servisler her kosulda durdurulur ──────────────────────────
+      - name: 🛑 Docker Compose Down
+        if: always()
+        run: docker compose down -v
