@@ -8,8 +8,8 @@ spring:
   # MySQL Database Configuration (via Toxiproxy)
   datasource:
     url: jdbc:mysql://localhost:3307/stockdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: REMOVED_PASSWORD
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   
   # JPA/Hibernate Configuration

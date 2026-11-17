@@ -43,3 +43,8 @@ frontend/dist/
 
 ### Chaos Engineering ###
 chaos/results/
+
+### Environment variables ###
+.env
+.env.*
+!.env.example

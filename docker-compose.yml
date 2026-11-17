@@ -33,7 +33,7 @@ services:
     image: mysql:8.0
     container_name: mysql-db
     environment:
-      MYSQL_ROOT_PASSWORD: REMOVED_PASSWORD
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
       MYSQL_DATABASE: stockdb
     ports:
       - "3306:3306"
@@ -42,7 +42,7 @@ services:
     networks:
       - stock-network
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pREMOVED_PASSWORD" ]
+      test: [ "CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -129,6 +129,8 @@ services:
     container_name: stock-tracking-app
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://toxiproxy:3307/stockdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD is required}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: toxiproxy:29093
       SPRING_DATA_REDIS_HOST: toxiproxy
       SPRING_DATA_REDIS_PORT: 26379
