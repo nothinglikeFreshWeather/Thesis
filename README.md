@@ -175,7 +175,7 @@ Projeyi inceleyen bir mühendisin veya yöneticinin tüm sistemi (10 konteyner) 
 ### Adım 1: Tüm Altyapıyı Tek Komutla Ayağa Kaldırın
 
 ```bash
-git clone https://github.com/alperenbalim/Thesis.git
+git clone https://github.com/nothinglikeFreshWeather/Thesis.git
 cd Thesis
 docker compose up -d --build
 ```
