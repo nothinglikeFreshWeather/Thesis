@@ -26,7 +26,21 @@ public class RedisConfig {
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
         config.setHostName(redisHost);
         config.setPort(redisPort);
-        return new LettuceConnectionFactory(config);
+
+        io.lettuce.core.ClientOptions clientOptions = io.lettuce.core.ClientOptions.builder()
+                .disconnectedBehavior(io.lettuce.core.ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                .socketOptions(io.lettuce.core.SocketOptions.builder()
+                        .connectTimeout(java.time.Duration.ofSeconds(2))
+                        .build())
+                .build();
+
+        org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration clientConfig = 
+                org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration.builder()
+                .commandTimeout(java.time.Duration.ofSeconds(2))
+                .clientOptions(clientOptions)
+                .build();
+
+        return new LettuceConnectionFactory(config, clientConfig);
     }
 
     @Bean

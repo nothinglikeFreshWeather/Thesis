@@ -36,5 +36,10 @@ out/
 ### VS Code ###
 .vscode/
 
+### Node / Frontend ###
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
 ### Chaos Engineering ###
 chaos/results/

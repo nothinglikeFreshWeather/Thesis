@@ -62,6 +62,8 @@ spring:
           max-idle: 8
           min-idle: 2
           max-wait: -1ms
+          shutdown-timeout: 200ms
+          command-timeout: 5000ms 
 
 # Cache Configuration
 cache:
